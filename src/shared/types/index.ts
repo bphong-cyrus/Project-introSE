@@ -7,6 +7,7 @@ export interface User {
   fullName: string;
   avatar?: string;
   age?: number;
+  dateOfBirth?: string;
   job?: string;
   income?: number;
   createdAt: Date;
@@ -110,7 +111,7 @@ export type MainTabParamList = {
   Home: undefined;
   Transactions: undefined;
   Budget: undefined;
-  Categories: undefined;
+  Profile: undefined;
 };
 
 // API Response Types

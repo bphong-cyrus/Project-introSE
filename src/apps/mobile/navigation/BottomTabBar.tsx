@@ -1,7 +1,7 @@
 // SmartSpend AI - Bottom Tab Bar
 // Bootstrap Icons: uses Ionicons which has Bootstrap-style icons
 // Primary color: #167B63
-// Design: 5 tabs - home, list, + (floating), wallet, folder
+// Design: 5 tabs - home, list, + (floating), wallet, profile
 
 import React from 'react';
 import {
@@ -12,7 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
 
-type TabName = 'Home' | 'Transactions' | 'Add' | 'Budget' | 'Categories';
+type TabName = 'Home' | 'Transactions' | 'Add' | 'Budget' | 'Profile';
 
 export const BOTTOM_TAB_BAR_HEIGHT = 112;
 
@@ -42,8 +42,8 @@ const BottomTabBar: React.FC<BottomTabBarProps> = ({
         return <Ionicons name="add-circle" size={size + 2} color="#FFFFFF" />;
       case 'Budget':
         return <Ionicons name="wallet" size={size} color={color} />;
-      case 'Categories':
-        return <Ionicons name="folder" size={size} color={color} />;
+      case 'Profile':
+        return <Ionicons name="person-circle" size={size} color={color} />;
       default:
         return <Ionicons name="home" size={size} color={color} />;
     }
@@ -101,13 +101,13 @@ const BottomTabBar: React.FC<BottomTabBarProps> = ({
             </View>
           </TouchableOpacity>
 
-          {/* Categories Tab */}
+          {/* Profile Tab */}
           <TouchableOpacity
             style={styles.tabItem}
-            onPress={() => onTabPress?.('Categories')}
+            onPress={() => onTabPress?.('Profile')}
           >
-            <View style={[styles.iconWrapper, isActive('Categories') && styles.iconWrapperActive]}>
-              {getTabIcon('Categories', isActive('Categories'))}
+            <View style={[styles.iconWrapper, isActive('Profile') && styles.iconWrapperActive]}>
+              {getTabIcon('Profile', isActive('Profile'))}
             </View>
           </TouchableOpacity>
         </View>
