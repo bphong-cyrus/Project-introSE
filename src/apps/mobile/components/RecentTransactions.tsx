@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
 import { Transaction } from '../../../shared/types';
+import { toIoniconName } from '../../../shared/utils/icons';
 
 interface RecentTransactionsProps {
   title?: string;
@@ -39,20 +40,6 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({
     }).format(date);
   };
 
-  const getCategoryEmoji = (categoryName?: string): string => {
-    const emojiMap: { [key: string]: string } = {
-      'Ăn uống': '🍜',
-      'Di chuyển': '🚗',
-      'Mua sắm': '🛒',
-      'Học tập': '📚',
-      'Giải trí': '🎮',
-      'Sức khỏe': '💊',
-      'Nhà cửa': '🏠',
-      'Khác': '📌',
-    };
-    return emojiMap[categoryName || ''] || '📌';
-  };
-
   const renderTransactionItem = ({ item }: { item: Transaction }) => (
     <TouchableOpacity
       style={styles.transactionItem}
@@ -66,9 +53,11 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({
           { backgroundColor: item.category?.color + '20' },
         ]}
       >
-        <Text style={styles.categoryEmoji}>
-          {getCategoryEmoji(item.category?.name)}
-        </Text>
+        <Ionicons
+          name={toIoniconName(item.category?.icon, item.category?.name) as any}
+          size={20}
+          color={item.category?.color || Colors.primary}
+        />
       </View>
 
       {/* Middle: Name & Category */}

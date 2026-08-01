@@ -16,6 +16,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
 import { Category } from '../../../shared/types';
+import { toIoniconName } from '../../../shared/utils/icons';
 
 interface IncomeCategoryCardProps {
   category: Category;
@@ -49,7 +50,7 @@ const IncomeCategoryCard: React.FC<IncomeCategoryCardProps> = ({
 
   // Get category icon - use category.icon first, fallback to default mapping
   const getCategoryIcon = (): string => {
-    if (category?.icon) return category.icon;
+    if (category?.icon) return toIoniconName(category.icon, category.name);
     return DEFAULT_ICON_MAP[category?.name || 'Khác'] || 'ellipsis-horizontal';
   };
 

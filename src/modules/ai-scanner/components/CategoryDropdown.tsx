@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
 import { Category } from '../../../shared/types';
+import { toIoniconName } from '../../../shared/utils/icons';
 
 interface CategoryDropdownProps {
   categories: Category[];
@@ -58,7 +59,7 @@ const CategoryDropdown: React.FC<CategoryDropdownProps> = ({
                   activeOpacity={0.7}
                 >
                   <View style={[styles.iconBox, { backgroundColor: category.color + '20' }]}>
-                    <Ionicons name={category.icon as any} size={20} color={category.color} />
+                    <Ionicons name={toIoniconName(category.icon, category.name) as any} size={20} color={category.color} />
                   </View>
                   <Text style={[styles.itemText, isSelected && styles.itemTextSelected]}>
                     {category.name}

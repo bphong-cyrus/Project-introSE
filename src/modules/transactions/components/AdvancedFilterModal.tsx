@@ -14,6 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
 import { Category } from '../../../shared/types';
+import { toIoniconName } from '../../../shared/utils/icons';
 import { formatVNDInput, parseVNDInput } from '../utils';
 
 export interface AdvancedFilter {
@@ -167,7 +168,7 @@ const AdvancedFilterModal: React.FC<AdvancedFilterModalProps> = ({
                       onPress={() => toggleCategory(cat.id)}
                     >
                       <View style={[styles.catIcon, { backgroundColor: cat.color + '20' }]}>
-                        <Ionicons name={cat.icon as any} size={14} color={cat.color} />
+                        <Ionicons name={toIoniconName(cat.icon, cat.name) as any} size={14} color={cat.color} />
                       </View>
                       <Text style={[
                         styles.categoryName,

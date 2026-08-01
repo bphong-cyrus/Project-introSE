@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
 import { Category } from '../../../shared/types';
+import { toIoniconName } from '../../../shared/utils/icons';
 
 interface CategoryPickerProps {
   categories: Category[];
@@ -49,7 +50,7 @@ const CategoryPicker: React.FC<CategoryPickerProps> = ({
               ]}
             >
               <Ionicons
-                name={selectedCategory.icon as any}
+                name={toIoniconName(selectedCategory.icon, selectedCategory.name) as any}
                 size={20}
                 color={selectedCategory.color}
               />
@@ -100,7 +101,7 @@ const CategoryPicker: React.FC<CategoryPickerProps> = ({
                     ]}
                   >
                     <Ionicons
-                      name={item.icon as any}
+                      name={toIoniconName(item.icon, item.name) as any}
                       size={22}
                       color={item.color}
                     />

@@ -14,6 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
 import { Transaction } from '../../../shared/types';
+import { toIoniconName } from '../../../shared/utils/icons';
 import { useTransactions } from '../../../state/TransactionContext';
 import { formatVND, formatDateDMY, formatTime12h, formatDateISO } from '../utils';
 
@@ -48,7 +49,7 @@ const TransactionDetailScreen: React.FC<TransactionDetailScreenProps> = ({
 
   const isExpense = transaction?.type === 'expense';
   const categoryColor = transaction?.category?.color || Colors.primary;
-  const categoryIcon = (transaction?.category?.icon as any) || 'wallet';
+  const categoryIcon = toIoniconName(transaction?.category?.icon, transaction?.category?.name, 'wallet');
   const categoryName = transaction?.category?.name || 'Không phân loại';
 
   const handleDelete = useCallback(() => {
@@ -123,7 +124,7 @@ const TransactionDetailScreen: React.FC<TransactionDetailScreenProps> = ({
           <View style={styles.heroTop}>
             {/* Category Icon */}
             <View style={[styles.heroIconContainer, { backgroundColor: categoryColor + '20' }]}>
-              <Ionicons name={categoryIcon} size={28} color={categoryColor} />
+              <Ionicons name={categoryIcon as any} size={28} color={categoryColor} />
             </View>
 
             {/* Type Badge */}

@@ -11,14 +11,17 @@ import {
   SafeAreaView,
   StatusBar,
   TouchableOpacity,
+  Image,
 } from 'react-native';
-import { FontAwesome } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
 import { formatCurrency } from '../../../shared/utils/formatCurrency';
-import { currentUser, userCategoryBreakdown } from '../../../data/datasources/mock/userMockData';
+import { toIoniconName } from '../../../shared/utils/icons';
 import PieChart from '../components/PieChart';
-import { Transaction } from '../../../shared/types';
+import { Transaction, CategoryBreakdown } from '../../../shared/types';
 import { useTransactions } from '../../../state/TransactionContext';
+import { useCategories } from '../../../state/CategoryContext';
+import { useAuth } from '../../../state/AuthContext';
 
 // ========== HELPER FUNCTIONS ==========
 const formatDate = (date: Date): string => {
@@ -27,20 +30,6 @@ const formatDate = (date: Date): string => {
     month: '2-digit',
     year: 'numeric',
   }).format(date);
-};
-
-// Get emoji for category
-const getCategoryEmoji = (name: string): string => {
-  const emojis: { [key: string]: string } = {
-    'Ăn uống': '🍜',
-    'Di chuyển': '🚗',
-    'Mua sắm': '🛒',
-    'Học tập': '📚',
-    'Khác': '📌',
-    'Giải trí': '🎮',
-    'Sức khỏe': '💊',
-  };
-  return emojis[name] || '📌';
 };
 
 // ========== CALENDAR COMPONENT ==========
@@ -136,13 +125,13 @@ const Calendar: React.FC<CalendarProps> = ({ onDateSelect }) => {
       {/* Month Navigation */}
       <View style={calendarStyles.header}>
         <TouchableOpacity onPress={handlePrevMonth} style={calendarStyles.navButton}>
-          <FontAwesome name="chevron-left" size={16} color={Colors.textSecondary} />
+          <Ionicons name="chevron-back" size={16} color={Colors.textSecondary} />
         </TouchableOpacity>
         <Text style={calendarStyles.monthText}>
           {monthNames[currentMonth]} {currentYear}
         </Text>
         <TouchableOpacity onPress={handleNextMonth} style={calendarStyles.navButton}>
-          <FontAwesome name="chevron-right" size={16} color={Colors.textSecondary} />
+          <Ionicons name="chevron-forward" size={16} color={Colors.textSecondary} />
         </TouchableOpacity>
       </View>
 
@@ -297,9 +286,11 @@ const TransactionItem: React.FC<TransactionItemProps> = ({ transaction }) => {
           { backgroundColor: (transaction.category?.color || '#607D8B') + '20' }
         ]}
       >
-        <Text style={transactionStyles.emoji}>
-          {getCategoryEmoji(transaction.category?.name || 'Khác')}
-        </Text>
+        <Ionicons
+          name={toIoniconName(transaction.category?.icon, transaction.category?.name) as any}
+          size={20}
+          color={transaction.category?.color || '#607D8B'}
+        />
       </View>
 
       {/* Middle: Details */}
@@ -378,7 +369,7 @@ const transactionStyles = StyleSheet.create({
 });
 
 // ========== MAIN HOME SCREEN ==========
-type TabName = 'Home' | 'Transactions' | 'Add' | 'Budget' | 'Categories';
+type TabName = 'Home' | 'Transactions' | 'Add' | 'Budget' | 'Profile';
 
 interface HomeScreenProps {
   onTabChange?: (tab: TabName) => void;
@@ -387,6 +378,58 @@ interface HomeScreenProps {
 const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange }) => {
   const [activeTab, setActiveTab] = useState<TabName>('Home');
   const { transactions } = useTransactions();
+  const { expenseCategories } = useCategories();
+  const { user } = useAuth();
+  const displayName = user?.fullName?.trim() || 'Người dùng';
+
+  // Calculate category breakdown for PieChart from real transactions
+  const categoryBreakdown = useMemo((): CategoryBreakdown[] => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    // Filter expense transactions for current month
+    const monthExpenses = transactions.filter(t => {
+      const txnDate = new Date(t.date);
+      return t.type === 'expense' &&
+        txnDate.getMonth() === currentMonth &&
+        txnDate.getFullYear() === currentYear;
+    });
+
+    // Group by category
+    const categoryTotals: Record<string, { amount: number; count: number }> = {};
+    monthExpenses.forEach(t => {
+      if (!categoryTotals[t.categoryId]) {
+        categoryTotals[t.categoryId] = { amount: 0, count: 0 };
+      }
+      categoryTotals[t.categoryId].amount += t.amount;
+      categoryTotals[t.categoryId].count += 1;
+    });
+
+    // Convert to CategoryBreakdown format
+    const total = Object.values(categoryTotals).reduce((sum, item) => sum + item.amount, 0);
+
+    return Object.entries(categoryTotals)
+      .map(([categoryId, { amount, count }]) => {
+        const category = expenseCategories.find(c => c.id === categoryId);
+        return {
+          categoryId,
+          category: category || {
+            id: categoryId,
+            name: 'Khác',
+            icon: 'ellipsis-horizontal',
+            color: '#607D8B',
+            type: 'expense' as const,
+            isDefault: false,
+            userId: '',
+          },
+          amount,
+          percentage: total > 0 ? Math.round((amount / total) * 100) : 0,
+          transactionCount: count,
+        };
+      })
+      .sort((a, b) => b.amount - a.amount);
+  }, [transactions, expenseCategories]);
 
   // Calculate summary from real transactions
   const summaryData = useMemo(() => {
@@ -445,24 +488,32 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange }) => {
           <View style={styles.header}>
             {/* Left: User Info */}
             <View style={styles.userInfo}>
-              <View style={styles.avatarCircle}>
-                <Text style={styles.avatarText}>
-                  {currentUser.fullName.charAt(0)}
-                </Text>
-              </View>
+              <TouchableOpacity
+                style={styles.avatarCircle}
+                onPress={() => handleTabPress('Profile')}
+                activeOpacity={0.8}
+              >
+                {user?.avatar ? (
+                  <Image source={{ uri: user.avatar }} style={styles.avatarImage} resizeMode="cover" />
+                ) : (
+                  <Text style={styles.avatarText}>
+                    {displayName.charAt(0).toUpperCase()}
+                  </Text>
+                )}
+              </TouchableOpacity>
               <View style={styles.greetingContainer}>
                 <Text style={styles.greeting}>Xin chào</Text>
-                <Text style={styles.userName}>{currentUser.fullName}</Text>
+                <Text style={styles.userName}>{displayName}</Text>
               </View>
             </View>
 
             {/* Right: Notification & Settings */}
             <View style={styles.headerButtons}>
               <TouchableOpacity style={styles.headerButton}>
-                <FontAwesome name="bell" size={20} color="#FFFFFF" />
+                <Ionicons name="notifications" size={20} color="#FFFFFF" />
               </TouchableOpacity>
               <TouchableOpacity style={styles.headerButton}>
-                <FontAwesome name="gear" size={20} color="#FFFFFF" />
+                <Ionicons name="settings" size={20} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
           </View>
@@ -495,8 +546,8 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange }) => {
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>Tổng quan chi tiêu tháng</Text>
           <View style={styles.categoryCard}>
-            {/* Modern Pie Chart */}
-            <PieChart data={userCategoryBreakdown} size={220} />
+            {/* Modern Pie Chart - now uses real data */}
+            <PieChart data={categoryBreakdown} size={220} />
           </View>
         </View>
 
@@ -574,6 +625,11 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: 'bold',
     color: Colors.textLight,
+  },
+  avatarImage: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
   },
   greetingContainer: {
     marginLeft: 12,
