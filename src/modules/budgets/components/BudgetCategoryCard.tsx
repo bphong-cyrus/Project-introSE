@@ -16,6 +16,7 @@ import Svg, { Circle } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
 import { CategoryBudget } from '../../../shared/types';
+import { toIoniconName } from '../../../shared/utils/icons';
 
 interface BudgetCategoryCardProps {
   categoryBudget: CategoryBudget;
@@ -87,7 +88,7 @@ const BudgetCategoryCard: React.FC<BudgetCategoryCardProps> = ({
   const getCategoryIcon = (): string => {
     // First try to use the icon directly from category
     if (category?.icon) {
-      return category.icon;
+      return toIoniconName(category.icon, category.name);
     }
     // Fallback to default mapping by name
     return DEFAULT_ICON_MAP[category?.name || 'Khác'] || 'ellipsis-horizontal';

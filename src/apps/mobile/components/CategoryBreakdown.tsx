@@ -7,6 +7,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
 import { CategoryBreakdown as CategoryBreakdownType } from '../../../shared/types';
+import { toIoniconName } from '../../../shared/utils/icons';
 
 interface CategoryBreakdownProps {
   title?: string;
@@ -49,9 +50,11 @@ const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({
                     { backgroundColor: item.category.color + '20' },
                   ]}
                 >
-                  <Text style={styles.categoryEmoji}>
-                    {getCategoryEmoji(item.category.name)}
-                  </Text>
+                  <Ionicons
+                    name={toIoniconName(item.category.icon, item.category.name) as any}
+                    size={18}
+                    color={item.category.color}
+                  />
                 </View>
                 <Text style={styles.categoryName}>{item.category.name}</Text>
               </View>
@@ -80,21 +83,6 @@ const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({
       </View>
     </View>
   );
-};
-
-// Helper function to get emoji based on category name
-const getCategoryEmoji = (categoryName: string): string => {
-  const emojiMap: { [key: string]: string } = {
-    'Ăn uống': '🍜',
-    'Di chuyển': '🚗',
-    'Mua sắm': '🛒',
-    'Học tập': '📚',
-    'Giải trí': '🎮',
-    'Sức khỏe': '💊',
-    'Nhà cửa': '🏠',
-    'Khác': '📌',
-  };
-  return emojiMap[categoryName] || '📌';
 };
 
 const styles = StyleSheet.create({

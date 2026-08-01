@@ -14,6 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
 import { Category } from '../../../shared/types';
+import { toIoniconName } from '../../../shared/utils/icons';
 
 interface DeleteCategoryDialogProps {
   visible: boolean;
@@ -92,7 +93,7 @@ const DeleteCategoryDialog: React.FC<DeleteCategoryDialogProps> = ({
                     ]}
                   >
                     <Ionicons
-                      name={cat.icon as any}
+                      name={toIoniconName(cat.icon, cat.name) as any}
                       size={18}
                       color={cat.color}
                     />

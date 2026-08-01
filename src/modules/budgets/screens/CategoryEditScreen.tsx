@@ -21,6 +21,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
 import { CategoryBudget } from '../../../shared/types';
+import { toIoniconName } from '../../../shared/utils/icons';
 
 interface CategoryEditScreenProps {
   categoryBudget?: CategoryBudget;
@@ -60,7 +61,7 @@ const CategoryEditScreen: React.FC<CategoryEditScreenProps> = ({
   // Map category names to Ionicons names (fallback)
   const getCategoryIcon = (icon?: string, name?: string): string => {
     // First try to use icon directly from category
-    if (icon) return icon;
+    if (icon) return toIoniconName(icon, name);
 
     // Fallback to default mapping by name
     const iconMap: { [key: string]: string } = {

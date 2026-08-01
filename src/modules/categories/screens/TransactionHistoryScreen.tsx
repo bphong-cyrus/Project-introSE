@@ -17,7 +17,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
 import { Transaction } from '../../../shared/types';
-import { userTransactions } from '../../../data/datasources/mock/userMockData';
+import { toIoniconName } from '../../../shared/utils/icons';
+import { useTransactions } from '../../../state/TransactionContext';
 
 interface TransactionHistoryScreenProps {
   categoryId?: string;
@@ -41,16 +42,18 @@ const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> = ({
   onClose,
 }) => {
   const [filterType, setFilterType] = useState<'all' | 'week' | 'month'>('all');
+  const { transactions } = useTransactions();
 
   // Determine if this is an income category
   const isIncome = categoryType === 'income';
   const totalLabel = isIncome ? 'Tổng thu' : 'Tổng chi';
   const amountColor = isIncome ? Colors.income : Colors.expense;
   const amountPrefix = isIncome ? '+' : '-';
+  const ioniconName = toIoniconName(categoryIcon, categoryName);
 
   // Filter transactions for this category within selected month
   const filteredTransactions = useMemo(() => {
-    let transactions = userTransactions.filter((txn) => {
+    let filtered = transactions.filter((txn) => {
       const txnDate = new Date(txn.date);
       const matchesCategory = txn.categoryId === categoryId;
       const matchesType = txn.type === categoryType;
@@ -65,24 +68,24 @@ const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> = ({
     if (filterType === 'week') {
       const now = new Date(selectedYear || new Date().getFullYear(), selectedMonth || new Date().getMonth(), 1);
       const weekEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-      transactions = transactions.filter((txn) => {
+      filtered = filtered.filter((txn) => {
         const txnDate = new Date(txn.date);
         return txnDate >= now && txnDate <= weekEnd;
       });
     } else if (filterType === 'month') {
       const monthStart = new Date(selectedYear || new Date().getFullYear(), selectedMonth || new Date().getMonth(), 1);
       const monthEnd = new Date(monthStart.getTime() + 30 * 24 * 60 * 60 * 1000);
-      transactions = transactions.filter((txn) => {
+      filtered = filtered.filter((txn) => {
         const txnDate = new Date(txn.date);
         return txnDate >= monthStart && txnDate <= monthEnd;
       });
     }
 
     // Sort by date descending
-    return transactions.sort(
+    return filtered.sort(
       (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
     );
-  }, [categoryId, categoryType, selectedMonth, selectedYear, filterType]);
+  }, [transactions, categoryId, categoryType, selectedMonth, selectedYear, filterType]);
 
   // Calculate total for filtered transactions
   const totalFiltered = filteredTransactions.reduce(
@@ -129,7 +132,7 @@ const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> = ({
           { backgroundColor: categoryColor + '20' },
         ]}
       >
-        <Ionicons name={categoryIcon as any} size={20} color={categoryColor} />
+        <Ionicons name={ioniconName as any} size={20} color={categoryColor} />
       </View>
 
       <View style={styles.transactionContent}>
@@ -188,7 +191,7 @@ const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> = ({
           ]}
         >
           <Ionicons
-            name={categoryIcon as any}
+            name={ioniconName as any}
             size={28}
             color={categoryColor}
           />

@@ -6,6 +6,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
 import { Transaction } from '../../../shared/types';
+import { toIoniconName } from '../../../shared/utils/icons';
 import { formatVND, formatDateISO, formatTime } from '../utils';
 
 interface TransactionCardProps {
@@ -16,7 +17,7 @@ interface TransactionCardProps {
 const TransactionCard: React.FC<TransactionCardProps> = ({ transaction, onPress }) => {
   const isExpense = transaction.type === 'expense';
   const categoryColor = transaction.category?.color || Colors.primary;
-  const categoryIcon = (transaction.category?.icon as any) || 'wallet';
+  const categoryIcon = toIoniconName(transaction.category?.icon, transaction.category?.name, 'wallet');
   const categoryName = transaction.category?.name || 'Khác';
 
   return (
@@ -27,7 +28,7 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ transaction, onPress 
     >
       {/* Left: Category Icon */}
       <View style={[styles.iconContainer, { backgroundColor: categoryColor + '20' }]}>
-        <Ionicons name={categoryIcon} size={20} color={categoryColor} />
+        <Ionicons name={categoryIcon as any} size={20} color={categoryColor} />
       </View>
 
       {/* Center: Name + Category • Date • Time */}
