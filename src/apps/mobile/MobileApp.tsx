@@ -1,47 +1,103 @@
 // SmartSpend AI - Main App Entry Point
 // React Native with Expo
+// Handles Authentication Flow + Main App Navigation
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
-import { HomeScreen, PlaceholderScreen, BudgetScreen, CategoryEditScreen } from './screens';
 import { Colors } from '../../shared/constants/colors';
-import { BottomTabBar } from './components';
-import { BOTTOM_TAB_BAR_HEIGHT } from './navigation/BottomTabBar';
+
+// Providers
+import { AuthProvider, useAuth } from '../../state/AuthContext';
 import { TransactionProvider } from '../../state/TransactionContext';
 import { CategoryProvider } from '../../state/CategoryContext';
+
+// Auth Screens
+import {
+  SplashScreen,
+  LoginScreen,
+  RegisterScreen,
+  ProfileSetupScreen,
+  ForgotPasswordScreen,
+  OTPScreen,
+  ResetPasswordScreen,
+} from './screens';
+
+// Main App Screens & Components
+import { HomeScreen, ProfileScreen, BudgetScreen } from './screens';
+import { BottomTabBar } from './components';
+import { BOTTOM_TAB_BAR_HEIGHT } from './navigation/BottomTabBar';
 import { AddTransactionScreen } from '../../modules/transactions';
 import { AIScannerScreen, AIResultScreen } from '../../modules/ai-scanner';
 import type { ExtractedReceiptData } from '../../modules/ai-scanner/screens/AIScannerScreen';
-import { TransactionHistoryScreen } from '../../modules/transactions';
-import { TransactionDetailScreen } from '../../modules/transactions';
-import { EditTransactionScreen } from '../../modules/transactions';
+import { TransactionHistoryScreen, TransactionDetailScreen, EditTransactionScreen } from '../../modules/transactions';
 import { Transaction } from '../../shared/types';
 
-type TabName = 'Home' | 'Transactions' | 'Add' | 'Budget' | 'Categories';
-
-// Sub-screen state for AddTransaction flow
+// Type definitions
+type TabName = 'Home' | 'Transactions' | 'Add' | 'Budget' | 'Profile';
 type AddFlowScreen = 'main' | 'ai-scanner' | 'ai-result';
-
-// History screen flow
 type HistoryScreen = 'list' | 'detail' | 'edit';
+type AuthScreen = 'login' | 'register' | 'forgotPassword' | 'otp' | 'resetPassword' | 'profileSetup';
 
-export default function App() {
+// Inner app component that uses auth context
+const AppContent: React.FC = () => {
+  const { authState } = useAuth();
+
+  // Auth navigation state
+  const [authScreen, setAuthScreen] = useState<AuthScreen>('login');
+  const [pendingEmail, setPendingEmail] = useState('');
+  const [showSplash, setShowSplash] = useState(true);
+
+  // Main app state (same as before)
   const [activeTab, setActiveTab] = useState<TabName>('Home');
   const [addFlowScreen, setAddFlowScreen] = useState<AddFlowScreen>('main');
   const [extractedData, setExtractedData] = useState<ExtractedReceiptData | null>(null);
-
-  // History/Detail/Edit flow state
   const [historyScreen, setHistoryScreen] = useState<HistoryScreen>('list');
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
+  // Handle splash screen ready
+  const handleSplashReady = useCallback(() => {
+    setShowSplash(false);
+  }, []);
+
+  // Auth navigation handlers
+  const navigateToLogin = useCallback(() => {
+    setAuthScreen('login');
+  }, []);
+
+  const navigateToRegister = useCallback(() => {
+    setAuthScreen('register');
+  }, []);
+
+  const navigateToForgotPassword = useCallback(() => {
+    setAuthScreen('forgotPassword');
+  }, []);
+
+  const navigateToOTP = useCallback((email: string) => {
+    setPendingEmail(email);
+    setAuthScreen('otp');
+  }, []);
+
+  const navigateToResetPassword = useCallback(() => {
+    setAuthScreen('resetPassword');
+  }, []);
+
+  const navigateToProfileSetup = useCallback(() => {
+    setAuthScreen('profileSetup');
+  }, []);
+
+  const handleAuthSuccess = useCallback(() => {
+    // AuthContext will update authState, which will trigger re-render
+    // and show the main app
+  }, []);
+
+  // Tab navigation handlers (same as before)
   const handleTabPress = (tab: TabName) => {
     setActiveTab(tab);
     setAddFlowScreen('main');
-    // Reset history flow when leaving Transactions tab
     if (activeTab === 'Transactions' && tab !== 'Transactions') {
       setHistoryScreen('list');
       setSelectedTransactionId(null);
@@ -73,7 +129,6 @@ export default function App() {
     setAddFlowScreen('ai-scanner');
   };
 
-  // Transaction History handlers
   const handleTransactionPress = (transaction: Transaction) => {
     setSelectedTransaction(transaction);
     setSelectedTransactionId(transaction.id);
@@ -108,39 +163,101 @@ export default function App() {
     setSelectedTransaction(null);
   };
 
-  // Render Transactions tab content
-  const renderTransactionsContent = () => {
-    if (historyScreen === 'edit' && selectedTransaction) {
-      return (
-        <EditTransactionScreen
-          transaction={selectedTransaction}
-          onBack={handleEditBack}
-          onSaved={handleEditSaved}
-        />
-      );
+  // Render auth screens
+  const renderAuthScreen = () => {
+    switch (authScreen) {
+      case 'login':
+        return (
+          <LoginScreen
+            onNavigateToRegister={navigateToRegister}
+            onNavigateToForgotPassword={navigateToForgotPassword}
+            onLoginSuccess={handleAuthSuccess}
+          />
+        );
+      case 'register':
+        return (
+          <RegisterScreen
+            onNavigateToLogin={navigateToLogin}
+            onNavigateToOTP={navigateToOTP}
+          />
+        );
+      case 'forgotPassword':
+        return (
+          <ForgotPasswordScreen
+            onBackToLogin={navigateToLogin}
+            onNavigateToOTP={navigateToOTP}
+          />
+        );
+      case 'otp':
+        return (
+          <OTPScreen
+            email={pendingEmail}
+            purpose="register"
+            onVerified={navigateToProfileSetup}
+            onBack={navigateToLogin}
+          />
+        );
+      case 'resetPassword':
+        return (
+          <ResetPasswordScreen
+            email={pendingEmail}
+            otpToken=""
+            onSuccess={navigateToLogin}
+            onBack={navigateToLogin}
+          />
+        );
+      case 'profileSetup':
+        return (
+          <ProfileSetupScreen
+            onComplete={handleAuthSuccess}
+            onSkip={handleAuthSuccess}
+          />
+        );
+      default:
+        return (
+          <LoginScreen
+            onNavigateToRegister={navigateToRegister}
+            onNavigateToForgotPassword={navigateToForgotPassword}
+            onLoginSuccess={handleAuthSuccess}
+          />
+        );
     }
-
-    if (historyScreen === 'detail' && selectedTransactionId) {
-      return (
-        <TransactionDetailScreen
-          transactionId={selectedTransactionId}
-          onBack={handleDetailBack}
-          onEdit={handleDetailEdit}
-          onDeleted={handleDetailDeleted}
-        />
-      );
-    }
-
-    return (
-      <TransactionHistoryScreen
-        onTransactionPress={handleTransactionPress}
-        showTopBar={true}
-      />
-    );
   };
 
-  // Render content based on active tab and add-flow screen
-  const renderContent = () => {
+  // Render main app content
+  const renderMainContent = () => {
+    // Transaction History content
+    const renderTransactionsContent = () => {
+      if (historyScreen === 'edit' && selectedTransaction) {
+        return (
+          <EditTransactionScreen
+            transaction={selectedTransaction}
+            onBack={handleEditBack}
+            onSaved={handleEditSaved}
+          />
+        );
+      }
+
+      if (historyScreen === 'detail' && selectedTransactionId) {
+        return (
+          <TransactionDetailScreen
+            transactionId={selectedTransactionId}
+            onBack={handleDetailBack}
+            onEdit={handleDetailEdit}
+            onDeleted={handleDetailDeleted}
+          />
+        );
+      }
+
+      return (
+        <TransactionHistoryScreen
+          onTransactionPress={handleTransactionPress}
+          showTopBar={true}
+        />
+      );
+    };
+
+    // Render based on active tab
     if (activeTab === 'Add') {
       if (addFlowScreen === 'ai-scanner') {
         return (
@@ -178,32 +295,70 @@ export default function App() {
         return renderTransactionsContent();
       case 'Budget':
         return <BudgetScreen />;
-      case 'Categories':
-        return <PlaceholderScreen title="Danh mục" />;
+      case 'Profile':
+        return <ProfileScreen />;
       default:
         return <HomeScreen onTabChange={handleTabPress} />;
     }
   };
 
+  // Show splash screen
+  if (showSplash && authState === 'loading') {
+    return <SplashScreen onReady={handleSplashReady} />;
+  }
+
+  // Show profile setup whenever the signed-in user has not completed onboarding
+  if (authState === 'onboarding') {
+    return (
+      <View style={styles.container}>
+        <ProfileSetupScreen
+          onComplete={handleAuthSuccess}
+          onSkip={handleAuthSuccess}
+        />
+        <StatusBar style="dark" />
+      </View>
+    );
+  }
+
+  // Show auth screens if not authenticated
+  if (authState === 'unauthenticated') {
+    return (
+      <View style={styles.container}>
+        {renderAuthScreen()}
+        <StatusBar style="dark" />
+      </View>
+    );
+  }
+
+  // Show main app when authenticated
+  return (
+    <NavigationContainer>
+      <View style={styles.container}>
+        <View style={styles.content}>
+          {renderMainContent()}
+        </View>
+        <BottomTabBar
+          activeTab={activeTab}
+          onTabPress={handleTabPress}
+          onAddPress={handleAddPress}
+        />
+      </View>
+      <StatusBar style="auto" />
+    </NavigationContainer>
+  );
+};
+
+// Main App component with all providers
+export default function App() {
   return (
     <SafeAreaProvider>
-      <CategoryProvider>
-        <TransactionProvider>
-          <NavigationContainer>
-            <View style={styles.container}>
-              <View style={styles.content}>
-                {renderContent()}
-              </View>
-              <BottomTabBar
-                activeTab={activeTab}
-                onTabPress={handleTabPress}
-                onAddPress={handleAddPress}
-              />
-            </View>
-            <StatusBar style="auto" />
-          </NavigationContainer>
-        </TransactionProvider>
-      </CategoryProvider>
+      <AuthProvider>
+        <CategoryProvider>
+          <TransactionProvider>
+            <AppContent />
+          </TransactionProvider>
+        </CategoryProvider>
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }
