@@ -77,7 +77,7 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
     if (!value) return '';
     const digits = value.replace(/[^0-9]/g, '');
     if (!digits) return '';
-    return parseInt(digits, 10).toLocaleString('en-US');
+    return parseInt(digits, 10).toLocaleString('vi-VN');
   };
 
   // Handle amount change
@@ -278,7 +278,7 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
               placeholderTextColor={Colors.textMuted}
               keyboardType="number-pad"
             />
-            <Text style={styles.currencySymbol}>đ</Text>
+            <Text style={styles.currencySymbol}>VND</Text>
           </View>
           {amountError ? <Text style={styles.errorText}>{amountError}</Text> : null}
         </View>

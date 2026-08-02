@@ -62,7 +62,7 @@ const RadialGauge: React.FC<RadialGaugeProps> = ({
   const backgroundPath = `M ${centerX - radius} ${centerY} A ${radius} ${radius} 0 1 1 ${centerX + radius} ${centerY}`;
 
   const formatCurrency = (amount: number): string => {
-    return new Intl.NumberFormat('vi-VN').format(amount);
+    return `${new Intl.NumberFormat('vi-VN').format(amount)} VND`;
   };
 
   return (
@@ -89,7 +89,7 @@ const RadialGauge: React.FC<RadialGaugeProps> = ({
       <View style={styles.centerContent}>
         <Text style={styles.label}>Tổng ngân sách</Text>
         <Text style={[styles.amount, { color: strokeColor }]}>
-          {formatCurrency(total)}đ
+          {formatCurrency(total)}
         </Text>
         <Text style={[styles.percentage, { color: strokeColor }]}>
           {percentage}%
@@ -97,7 +97,7 @@ const RadialGauge: React.FC<RadialGaugeProps> = ({
         {totalIncome && (
           <View style={styles.incomeRow}>
             <Text style={styles.incomeLabel}>Thu nhập: </Text>
-            <Text style={styles.incomeValue}>{formatCurrency(totalIncome)}đ</Text>
+            <Text style={styles.incomeValue}>{formatCurrency(totalIncome)}</Text>
           </View>
         )}
       </View>

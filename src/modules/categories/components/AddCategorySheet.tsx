@@ -38,16 +38,16 @@ interface AddCategorySheetProps {
 }
 
 const COLOR_OPTIONS = [
-  '#FF5722', // Deep Orange
-  '#E91E63', // Pink
-  '#9C27B0', // Purple
-  '#673AB7', // Deep Purple
-  '#3F51B5', // Indigo
-  '#2196F3', // Blue
+  '#FF6B6B', // Coral
+  '#F39C12', // Amber
+  '#FFD54F', // Yellow
+  '#2ECC71', // Emerald
   '#00BCD4', // Cyan
-  '#009688', // Teal
-  '#4CAF50', // Green
-  '#FF9800', // Orange
+  '#3498DB', // Blue
+  '#3F51B5', // Indigo
+  '#9B59B6', // Purple
+  '#E91E63', // Pink
+  '#E67E22', // Orange
   '#795548', // Brown
   '#607D8B', // Blue Grey
 ];

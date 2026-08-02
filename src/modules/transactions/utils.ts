@@ -26,8 +26,8 @@ export const matchesQuery = (query: string, text: string): boolean => {
 
 // Format VND amount with commas
 export const formatVND = (amount: number): string => {
-  if (isNaN(amount)) return '0';
-  return amount.toLocaleString('en-US');
+  if (isNaN(amount)) return '0 VND';
+  return `${amount.toLocaleString('vi-VN')} VND`;
 };
 
 // Format date as YYYY-MM-DD
@@ -82,5 +82,5 @@ export const parseVNDInput = (text: string): number => {
 export const formatVNDInput = (value: string | number): string => {
   const num = typeof value === 'number' ? value : parseVNDInput(value);
   if (!num) return '';
-  return num.toLocaleString('en-US');
+  return num.toLocaleString('vi-VN');
 };

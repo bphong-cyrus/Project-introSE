@@ -19,7 +19,7 @@ import { Colors } from '../../../shared/constants/colors';
 import { Transaction } from '../../../shared/types';
 import { useTransactions } from '../../../state/TransactionContext';
 import { useCategories } from '../../../state/CategoryContext';
-import { matchesQuery, normalize } from '../utils';
+import { formatDateISO, matchesQuery, normalize } from '../utils';
 import { QuickFilter } from '../components/FilterChips';
 import TransactionCard from '../components/TransactionCard';
 import FilterChips from '../components/FilterChips';
@@ -30,6 +30,7 @@ interface TransactionHistoryScreenProps {
   onTransactionPress?: (transaction: Transaction) => void;
   maxItems?: number; // For Frame 6 sync - limit to top N
   showTopBar?: boolean;
+  selectedDate?: Date | null;
 }
 
 const DEBOUNCE_MS = 300;
@@ -39,6 +40,7 @@ const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> = ({
   onTransactionPress,
   maxItems,
   showTopBar = true,
+  selectedDate = null,
 }) => {
   const navigation = useNavigation();
   const { transactions, isLoading, refreshTransactions } = useTransactions();
@@ -87,6 +89,16 @@ const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> = ({
   // Filter transactions based on all criteria
   const filteredTransactions = useMemo(() => {
     let result = [...transactions];
+
+    // 0. Date selected from Home calendar strip, exact local day only
+    if (selectedDate) {
+      result = result.filter((t) => {
+        const txnDate = new Date(t.date);
+        return txnDate.getDate() === selectedDate.getDate() &&
+          txnDate.getMonth() === selectedDate.getMonth() &&
+          txnDate.getFullYear() === selectedDate.getFullYear();
+      });
+    }
 
     // 1. Quick filter (All/Income/Expense/Category)
     switch (quickFilter) {
@@ -179,7 +191,7 @@ const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> = ({
     }
 
     return result;
-  }, [transactions, quickFilter, advancedFilter, debouncedQuery, maxItems]);
+  }, [transactions, selectedDate, quickFilter, advancedFilter, debouncedQuery, maxItems]);
 
   // Check if advanced filter is active
   const isAdvancedFilterActive = useMemo(() => {
@@ -269,6 +281,7 @@ const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> = ({
 
   // Active filter indicator
   const hasActiveFilters = quickFilter !== 'all' || isAdvancedFilterActive || !!debouncedQuery;
+  const selectedDateLabel = selectedDate ? formatDateISO(selectedDate) : null;
 
   return (
     <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
@@ -282,7 +295,9 @@ const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> = ({
           >
             <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={styles.topBarTitle}>Lịch sử giao dịch</Text>
+          <Text style={styles.topBarTitle}>
+            {selectedDateLabel ? `Giao dịch ngày ${selectedDateLabel}` : 'Lịch sử giao dịch'}
+          </Text>
           <TouchableOpacity
             style={styles.filterButton}
             onPress={() => setShowAdvancedFilter(true)}

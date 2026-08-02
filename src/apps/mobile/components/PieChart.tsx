@@ -95,6 +95,9 @@ const PieChart: React.FC<PieChartProps> = ({ data, size = DEFAULT_SIZE }) => {
   };
 
   const selectedSlice = slices.find(s => s.categoryId === selectedId);
+  const formatCurrencyAmount = (amount: number) => {
+    return formatCurrency(amount).replace(/\s*VND$/, '');
+  };
 
   return (
     <View style={styles.wrapper}>
@@ -124,17 +127,22 @@ const PieChart: React.FC<PieChartProps> = ({ data, size = DEFAULT_SIZE }) => {
         </Svg>
 
         {/* Center info display */}
-        <View style={styles.centerInfo}>
+        <View style={[styles.centerInfo, { width: innerRadius * 1.72 }]}>
           {selectedSlice ? (
             <>
               <Text style={styles.centerCategoryName}>{selectedSlice.category.name}</Text>
-              <Text style={styles.centerAmount}>{formatCurrency(selectedSlice.amount)}</Text>
+              <Text style={styles.centerAmount} numberOfLines={1} adjustsFontSizeToFit>
+                {formatCurrencyAmount(selectedSlice.amount)}
+              </Text>
+              <Text style={styles.centerCurrency}>VND</Text>
               <Text style={styles.centerPercent}>{selectedSlice.percentage}%</Text>
             </>
           ) : (
             <>
               <Text style={styles.centerLabel}>Tổng chi tiêu</Text>
-              <Text style={styles.centerTotalAmount}>{formatCurrency(total)}</Text>
+              <Text style={styles.centerTotalAmount} numberOfLines={1} adjustsFontSizeToFit>
+                {formatCurrencyAmount(total)}
+              </Text>
               <Text style={styles.centerCurrency}>VND</Text>
             </>
           )}
@@ -210,12 +218,11 @@ const styles = StyleSheet.create({
   centerInfo: {
     position: 'absolute',
     top: 0,
-    left: 0,
-    right: 0,
     bottom: 0,
+    alignSelf: 'center',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 4,
   },
   centerLabel: {
     fontSize: 12,
@@ -224,14 +231,16 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   centerTotalAmount: {
-    fontSize: 22,
+    fontSize: 16,
     fontWeight: 'bold',
     color: Colors.textPrimary,
+    textAlign: 'center',
+    maxWidth: '100%',
   },
   centerCurrency: {
     fontSize: 11,
     color: Colors.textMuted,
-    marginTop: 2,
+    marginTop: 1,
   },
   centerCategoryName: {
     fontSize: 14,
@@ -240,9 +249,11 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   centerAmount: {
-    fontSize: 20,
+    fontSize: 15,
     fontWeight: 'bold',
     color: Colors.primary,
+    textAlign: 'center',
+    maxWidth: '100%',
   },
   centerPercent: {
     fontSize: 13,

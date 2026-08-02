@@ -267,7 +267,7 @@ const BudgetScreen: React.FC = () => {
             <View style={styles.overBudgetContent}>
               <Text style={styles.overBudgetTitle}>Vượt quá thu nhập!</Text>
               <Text style={styles.overBudgetMessage}>
-                Tổng hạn mức ({totalBudgetLimit.toLocaleString('vi-VN')}đ) vượt quá thu nhập tháng ({totalIncome.toLocaleString('vi-VN')}đ)
+                Tổng hạn mức ({totalBudgetLimit.toLocaleString('vi-VN')} VND) vượt quá thu nhập tháng ({totalIncome.toLocaleString('vi-VN')} VND)
               </Text>
             </View>
           </View>

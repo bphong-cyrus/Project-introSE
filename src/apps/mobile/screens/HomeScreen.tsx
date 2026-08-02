@@ -12,6 +12,7 @@ import {
   StatusBar,
   TouchableOpacity,
   Image,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
@@ -37,143 +38,84 @@ interface CalendarProps {
   onDateSelect?: (date: Date) => void;
 }
 
-const Calendar: React.FC<CalendarProps> = ({ onDateSelect }) => {
-  const [currentDate, setCurrentDate] = useState(new Date());
+const CalendarStrip: React.FC<CalendarProps> = ({ onDateSelect }) => {
   const [selectedDate, setSelectedDate] = useState(new Date());
 
   const today = new Date();
-  const currentMonth = currentDate.getMonth();
-  const currentYear = currentDate.getFullYear();
+  const monthTitle = `Tháng ${selectedDate.getMonth() + 1}`;
+  const todayLabel = `Hôm nay, ${today.getDate()} Th${today.getMonth() + 1}`;
 
-  const monthNames = [
-    'Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6',
-    'Tháng 7', 'Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12'
-  ];
+  const getWeekDates = () => {
+    const base = new Date(selectedDate);
+    const day = base.getDay();
+    const mondayOffset = day === 0 ? -6 : 1 - day;
+    const monday = new Date(base);
+    monday.setDate(base.getDate() + mondayOffset);
 
-  const dayNames = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
-
-  const getDaysInMonth = (month: number, year: number) => {
-    return new Date(year, month + 1, 0).getDate();
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(monday);
+      date.setDate(monday.getDate() + index);
+      return date;
+    });
   };
 
-  const getFirstDayOfMonth = (month: number, year: number) => {
-    return new Date(year, month, 1).getDay();
+  const weekDays = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+  const weekDates = getWeekDates();
+
+  const isSameDate = (a: Date, b: Date) => {
+    return a.getDate() === b.getDate() &&
+      a.getMonth() === b.getMonth() &&
+      a.getFullYear() === b.getFullYear();
   };
 
-  const generateCalendarDays = () => {
-    const daysInMonth = getDaysInMonth(currentMonth, currentYear);
-    const firstDay = getFirstDayOfMonth(currentMonth, currentYear);
-    const days: (number | null)[] = [];
-
-    for (let i = 0; i < firstDay; i++) {
-      days.push(null);
-    }
-
-    for (let i = 1; i <= daysInMonth; i++) {
-      days.push(i);
-    }
-
-    return days;
+  const handleDatePress = (date: Date) => {
+    setSelectedDate(date);
+    onDateSelect?.(date);
   };
 
-  const handlePrevMonth = () => {
-    setCurrentDate(new Date(currentYear, currentMonth - 1, 1));
+  const shiftWeek = (offset: number) => {
+    const next = new Date(selectedDate);
+    next.setDate(selectedDate.getDate() + offset * 7);
+    setSelectedDate(next);
   };
-
-  const handleNextMonth = () => {
-    setCurrentDate(new Date(currentYear, currentMonth + 1, 1));
-  };
-
-  const handleDatePress = (day: number) => {
-    const selected = new Date(currentYear, currentMonth, day);
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-
-    if (selected <= now) {
-      setSelectedDate(selected);
-      onDateSelect?.(selected);
-    }
-  };
-
-  const isToday = (day: number) => {
-    return (
-      day === today.getDate() &&
-      currentMonth === today.getMonth() &&
-      currentYear === today.getFullYear()
-    );
-  };
-
-  const isSelected = (day: number) => {
-    return (
-      day === selectedDate.getDate() &&
-      currentMonth === selectedDate.getMonth() &&
-      currentYear === selectedDate.getFullYear()
-    );
-  };
-
-  const isFuture = (day: number) => {
-    const date = new Date(currentYear, currentMonth, day);
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-    return date > now;
-  };
-
-  const days = generateCalendarDays();
 
   return (
     <View style={calendarStyles.container}>
-      {/* Month Navigation */}
-      <View style={calendarStyles.header}>
-        <TouchableOpacity onPress={handlePrevMonth} style={calendarStyles.navButton}>
-          <Ionicons name="chevron-back" size={16} color={Colors.textSecondary} />
+      <View style={calendarStyles.stripHeader}>
+        <TouchableOpacity onPress={() => shiftWeek(-1)} style={calendarStyles.weekNavButton}>
+          <Ionicons name="chevron-back" size={18} color={Colors.primary} />
         </TouchableOpacity>
-        <Text style={calendarStyles.monthText}>
-          {monthNames[currentMonth]} {currentYear}
-        </Text>
-        <TouchableOpacity onPress={handleNextMonth} style={calendarStyles.navButton}>
-          <Ionicons name="chevron-forward" size={16} color={Colors.textSecondary} />
+        <Text style={calendarStyles.monthText}>{monthTitle}</Text>
+        <Text style={calendarStyles.todayText}>{todayLabel}</Text>
+        <TouchableOpacity onPress={() => shiftWeek(1)} style={calendarStyles.weekNavButton}>
+          <Ionicons name="chevron-forward" size={18} color={Colors.primary} />
         </TouchableOpacity>
       </View>
 
-      {/* Day Names */}
-      <View style={calendarStyles.weekRow}>
-        {dayNames.map((day, index) => (
-          <View key={index} style={calendarStyles.dayCell}>
-            <Text style={calendarStyles.dayName}>{day}</Text>
-          </View>
-        ))}
-      </View>
-
-      {/* Calendar Grid */}
-      <View style={calendarStyles.daysGrid}>
-        {days.map((day, index) => (
-          <View key={index} style={calendarStyles.dayCell}>
-            {day !== null ? (
-              <TouchableOpacity
-                style={[
-                  calendarStyles.dayButton,
-                  isToday(day) && calendarStyles.todayButton,
-                  isSelected(day) && calendarStyles.selectedButton,
-                  isFuture(day) && calendarStyles.futureButton,
-                ]}
-                onPress={() => handleDatePress(day)}
-                disabled={isFuture(day)}
-              >
-                <Text
-                  style={[
-                    calendarStyles.dayText,
-                    isToday(day) && !isSelected(day) && calendarStyles.todayText,
-                    isSelected(day) && calendarStyles.selectedText,
-                    isFuture(day) && calendarStyles.futureText,
-                  ]}
-                >
-                  {day}
-                </Text>
-              </TouchableOpacity>
-            ) : (
-              <View style={calendarStyles.emptyCell} />
-            )}
-          </View>
+      <View style={calendarStyles.dateRow}>
+        {weekDates.map((date) => (
+          <TouchableOpacity
+            key={date.toISOString()}
+            style={[
+              calendarStyles.dateChip,
+              isSameDate(date, selectedDate) && calendarStyles.dateChipSelected,
+            ]}
+            onPress={() => handleDatePress(date)}
+            activeOpacity={0.8}
+          >
+            <Text style={[
+              calendarStyles.dateDay,
+              isSameDate(date, selectedDate) && calendarStyles.dateTextSelected,
+            ]}>
+              {weekDays[date.getDay()]}
+            </Text>
+            <Text style={[
+              calendarStyles.dateNumber,
+              isSameDate(date, selectedDate) && calendarStyles.dateTextSelected,
+            ]}>
+              {date.getDate()}
+            </Text>
+          </TouchableOpacity>
         ))}
       </View>
     </View>
@@ -182,90 +124,62 @@ const Calendar: React.FC<CalendarProps> = ({ onDateSelect }) => {
 
 const calendarStyles = StyleSheet.create({
   container: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginHorizontal: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    marginTop: 4,
   },
-  header: {
+  stripHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 10,
   },
-  navButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.backgroundSecondary,
+  weekNavButton: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
   monthText: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
     color: Colors.textPrimary,
-  },
-  weekRow: {
-    flexDirection: 'row',
-    marginBottom: 8,
-  },
-  daysGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  dayCell: {
-    width: `${100 / 7}%`,
-    aspectRatio: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 2,
-  },
-  dayName: {
-    fontSize: 12,
-    color: Colors.textMuted,
-    fontWeight: '500',
-  },
-  dayButton: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  todayButton: {
-    borderWidth: 1.5,
-    borderColor: Colors.primary,
-  },
-  selectedButton: {
-    backgroundColor: Colors.primary,
-  },
-  futureButton: {
-    opacity: 0.3,
-  },
-  dayText: {
-    fontSize: 14,
-    color: Colors.textPrimary,
+    marginRight: 'auto',
   },
   todayText: {
+    fontSize: 12,
+    fontWeight: '600',
     color: Colors.primary,
-    fontWeight: '600',
+    marginRight: 6,
   },
-  selectedText: {
+  dateRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  dateChip: {
+    width: 42,
+    height: 54,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  dateChipSelected: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  dateDay: {
+    fontSize: 11,
+    color: Colors.textPrimary,
+  },
+  dateNumber: {
+    marginTop: 3,
+    fontSize: 15,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  dateTextSelected: {
     color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  futureText: {
-    color: Colors.textMuted,
-  },
-  emptyCell: {
-    width: '100%',
-    height: '100%',
   },
 });
 
@@ -373,27 +287,41 @@ type TabName = 'Home' | 'Transactions' | 'Add' | 'Budget' | 'Profile';
 
 interface HomeScreenProps {
   onTabChange?: (tab: TabName) => void;
+  onDateSelect?: (date: Date) => void;
 }
 
-const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange }) => {
+const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange, onDateSelect }) => {
   const [activeTab, setActiveTab] = useState<TabName>('Home');
+  const now = new Date();
+  const [selectedChartMonth, setSelectedChartMonth] = useState(now.getMonth());
+  const [selectedChartYear, setSelectedChartYear] = useState(now.getFullYear());
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
   const { transactions } = useTransactions();
   const { expenseCategories } = useCategories();
   const { user } = useAuth();
   const displayName = user?.fullName?.trim() || 'Người dùng';
+  const monthButtonLabel = `Tháng ${selectedChartMonth + 1}, ${selectedChartYear}`;
+
+  const chartMonthOptions = useMemo(() => {
+    const base = new Date();
+    return Array.from({ length: 12 }, (_, index) => {
+      const date = new Date(base.getFullYear(), base.getMonth() - index, 1);
+      return {
+        month: date.getMonth(),
+        year: date.getFullYear(),
+        label: `Tháng ${date.getMonth() + 1}, ${date.getFullYear()}`,
+      };
+    });
+  }, []);
 
   // Calculate category breakdown for PieChart from real transactions
   const categoryBreakdown = useMemo((): CategoryBreakdown[] => {
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-
     // Filter expense transactions for current month
     const monthExpenses = transactions.filter(t => {
       const txnDate = new Date(t.date);
       return t.type === 'expense' &&
-        txnDate.getMonth() === currentMonth &&
-        txnDate.getFullYear() === currentYear;
+        txnDate.getMonth() === selectedChartMonth &&
+        txnDate.getFullYear() === selectedChartYear;
     });
 
     // Group by category
@@ -429,7 +357,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange }) => {
         };
       })
       .sort((a, b) => b.amount - a.amount);
-  }, [transactions, expenseCategories]);
+  }, [transactions, expenseCategories, selectedChartMonth, selectedChartYear]);
 
   // Calculate summary from real transactions
   const summaryData = useMemo(() => {
@@ -471,7 +399,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange }) => {
   // Handle date selection -> Navigate to Transactions
   const handleDateSelect = (date: Date) => {
     setActiveTab('Transactions');
-    onTabChange?.('Transactions');
+    onDateSelect?.(date);
   };
 
   return (
@@ -523,20 +451,20 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange }) => {
         <View style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>Số dư khả dụng</Text>
           <Text style={styles.balanceAmount}>
-            {formatCurrency(summaryData.balance)} VND
+            {formatCurrency(summaryData.balance)}
           </Text>
           <View style={styles.balanceDivider} />
           <View style={styles.balanceStats}>
             <View style={styles.balanceStatItem}>
               <Text style={styles.balanceStatLabel}>Tổng thu nhập</Text>
               <Text style={styles.incomeText}>
-                +{formatCurrency(summaryData.totalIncome)} VND
+                +{formatCurrency(summaryData.totalIncome)}
               </Text>
             </View>
             <View style={styles.balanceStatItem}>
               <Text style={styles.balanceStatLabel}>Tổng chi tiêu</Text>
               <Text style={styles.expenseText}>
-                -{formatCurrency(summaryData.totalExpense)} VND
+                -{formatCurrency(summaryData.totalExpense)}
               </Text>
             </View>
           </View>
@@ -544,7 +472,17 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange }) => {
 
         {/* ========== KHUNG 3: TỔNG QUAN CHI TIÊU ========== */}
         <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Tổng quan chi tiêu tháng</Text>
+          <View style={styles.chartHeader}>
+            <Text style={styles.sectionTitle}>Tổng quan chi tiêu</Text>
+            <TouchableOpacity
+              style={styles.monthButton}
+              onPress={() => setShowMonthPicker(true)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.monthButtonText}>{monthButtonLabel}</Text>
+              <Ionicons name="chevron-down" size={14} color={Colors.primary} />
+            </TouchableOpacity>
+          </View>
           <View style={styles.categoryCard}>
             {/* Modern Pie Chart - now uses real data */}
             <PieChart data={categoryBreakdown} size={220} />
@@ -553,7 +491,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange }) => {
 
         {/* ========== KHUNG 4: LỊCH ========== */}
         <View style={styles.sectionContainer}>
-          <Calendar onDateSelect={handleDateSelect} />
+          <CalendarStrip onDateSelect={handleDateSelect} />
         </View>
 
         {/* ========== KHUNG 5: GIAO DỊCH GẦN ĐÂY ========== */}
@@ -579,6 +517,42 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange }) => {
         {/* Bottom padding for tab bar */}
         <View style={styles.bottomPadding} />
       </ScrollView>
+
+      <Modal
+        visible={showMonthPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowMonthPicker(false)}
+      >
+        <TouchableOpacity
+          style={styles.monthModalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowMonthPicker(false)}
+        >
+          <View style={styles.monthModal}>
+            <Text style={styles.monthModalTitle}>Chọn tháng hiển thị</Text>
+            {chartMonthOptions.map((item) => {
+              const isSelected = item.month === selectedChartMonth && item.year === selectedChartYear;
+              return (
+                <TouchableOpacity
+                  key={`${item.month}-${item.year}`}
+                  style={[styles.monthOption, isSelected && styles.monthOptionSelected]}
+                  onPress={() => {
+                    setSelectedChartMonth(item.month);
+                    setSelectedChartYear(item.year);
+                    setShowMonthPicker(false);
+                  }}
+                >
+                  <Text style={[styles.monthOptionText, isSelected && styles.monthOptionTextSelected]}>
+                    {item.label}
+                  </Text>
+                  {isSelected && <Ionicons name="checkmark-circle" size={20} color={Colors.primary} />}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -719,6 +693,22 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     marginBottom: 12,
   },
+  chartHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  monthButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  monthButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
 
   // ========== KHUNG 3: CATEGORY ==========
   categoryCard: {
@@ -751,6 +741,42 @@ const styles = StyleSheet.create({
   // ========== BOTTOM ==========
   bottomPadding: {
     height: 120,
+  },
+  monthModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+  },
+  monthModal: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 18,
+  },
+  monthModalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    marginBottom: 10,
+  },
+  monthOption: {
+    height: 42,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  monthOptionSelected: {
+    backgroundColor: Colors.primary + '12',
+  },
+  monthOptionText: {
+    fontSize: 14,
+    color: Colors.textPrimary,
+  },
+  monthOptionTextSelected: {
+    fontWeight: '700',
+    color: Colors.primary,
   },
 });
 

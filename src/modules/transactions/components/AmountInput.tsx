@@ -20,11 +20,11 @@ interface AmountInputProps {
 const AmountInput: React.FC<AmountInputProps> = ({ amount, onAmountChange, error }) => {
   const inputRef = useRef<TextInput>(null);
 
-  // Format number with thousand separators (commas)
+  // Format number with Vietnamese thousand separators
   const formatForDisplay = (value: string): string => {
     if (!value || value === '0') return '';
     const num = parseInt(value, 10) || 0;
-    return num.toLocaleString('en-US');
+    return num.toLocaleString('vi-VN');
   };
 
   // Handle text input change
@@ -56,7 +56,7 @@ const AmountInput: React.FC<AmountInputProps> = ({ amount, onAmountChange, error
           />
         </View>
         {/* Right side - currency symbol */}
-        <Text style={styles.currencySymbol}>đ</Text>
+        <Text style={styles.currencySymbol}>VND</Text>
       </TouchableOpacity>
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
     </View>

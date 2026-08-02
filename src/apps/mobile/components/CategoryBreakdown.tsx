@@ -21,7 +21,7 @@ const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({
   onSeeAllPress,
 }) => {
   const formatCurrency = (amount: number): string => {
-    return new Intl.NumberFormat('vi-VN').format(amount);
+    return `${new Intl.NumberFormat('vi-VN').format(amount)} VND`;
   };
 
   return (
@@ -59,7 +59,7 @@ const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({
                 <Text style={styles.categoryName}>{item.category.name}</Text>
               </View>
               <Text style={styles.categoryAmount}>
-                {formatCurrency(item.amount)} VND
+                {formatCurrency(item.amount)}
               </Text>
             </View>
 
