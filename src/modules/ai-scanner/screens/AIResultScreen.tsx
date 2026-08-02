@@ -16,6 +16,7 @@ import { Colors } from '../../../shared/constants/colors';
 import { useTransactions } from '../../../state/TransactionContext';
 import { useCategories } from '../../../state/CategoryContext';
 import { Category } from '../../../shared/types';
+import { Image } from 'react-native';
 import SuccessBanner from '../components/SuccessBanner';
 import ReceiptPreview from '../components/ReceiptPreview';
 import CategoryDropdown from '../components/CategoryDropdown';
@@ -148,6 +149,7 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
       category: selectedCategory,
       date: finalDate,
       note: note.trim() || undefined,
+      imageUrl: data.imageUri,
     });
 
     setShowSuccess(true);
@@ -212,6 +214,7 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
           storeName={data.storeName}
           dateString={dateConfidenceString}
           confidenceLevel={data.confidence.amount}
+          imageUri={data.imageUri}
         />
 
         {/* Transaction Type - AI Detected (Read-only with AI badge) */}
