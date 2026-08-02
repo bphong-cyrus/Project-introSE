@@ -19,6 +19,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
@@ -116,7 +117,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.logoContainer}>
-            <Text style={styles.logoText}>💰</Text>
+            <Image
+              source={require('../../../img/smartspend-logo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
           </View>
           <Text style={styles.title}>Chào mừng bạn!</Text>
           <Text style={styles.subtitle}>Đăng nhập để tiếp tục</Text>
@@ -279,8 +284,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 24,
   },
-  logoText: {
-    fontSize: 40,
+  logoImage: {
+    width: 72,
+    height: 72,
   },
   title: {
     fontSize: 28,

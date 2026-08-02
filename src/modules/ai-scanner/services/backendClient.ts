@@ -55,13 +55,13 @@ async function parseError(response: Response): Promise<{ message: string; payloa
   } catch {
     payload = await response.text().catch(() => null);
   }
-  const message =
-    (payload &&
-      typeof payload === 'object' &&
-      'error' in (payload as Record<string, unknown>) &&
-      typeof (payload as Record<string, unknown>).error === 'string' &&
-      ((payload as Record<string, unknown>).error as string)) ||
-    `Backend trả về HTTP ${response.status}`;
+  let message = `Backend trả về HTTP ${response.status}`;
+  if (payload && typeof payload === 'object') {
+    const errorValue = (payload as Record<string, unknown>).error;
+    if (typeof errorValue === 'string') {
+      message = errorValue;
+    }
+  }
   return { message, payload };
 }
 
