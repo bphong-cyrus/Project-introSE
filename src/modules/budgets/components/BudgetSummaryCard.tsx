@@ -29,7 +29,7 @@ const BudgetSummaryCard: React.FC<BudgetSummaryCardProps> = ({
   const progressColor = getProgressColor(percentage);
 
   const formatCurrency = (amount: number): string => {
-    return new Intl.NumberFormat('vi-VN').format(amount);
+    return `${new Intl.NumberFormat('vi-VN').format(amount)} VND`;
   };
 
   return (
@@ -38,7 +38,7 @@ const BudgetSummaryCard: React.FC<BudgetSummaryCardProps> = ({
       <View style={styles.headerRow}>
         <Text style={styles.label}>Đã dùng</Text>
         <Text style={[styles.amount, { color: progressColor }]}>
-          {formatCurrency(totalSpent)}đ
+          {formatCurrency(totalSpent)}
         </Text>
       </View>
 

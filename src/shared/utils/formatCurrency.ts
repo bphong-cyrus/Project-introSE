@@ -6,7 +6,7 @@ import { userCategories } from '../../data/datasources/mock/userMockData';
 
 // Helper function to format currency
 export const formatCurrency = (amount: number): string => {
-  return new Intl.NumberFormat('vi-VN').format(amount);
+  return `${new Intl.NumberFormat('vi-VN').format(amount)} VND`;
 };
 
 // Helper function to format date

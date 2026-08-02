@@ -86,7 +86,7 @@ const CategoryEditScreen: React.FC<CategoryEditScreenProps> = ({
   };
 
   const formatCurrency = (amount: number): string => {
-    return new Intl.NumberFormat('vi-VN').format(amount);
+    return `${new Intl.NumberFormat('vi-VN').format(amount)} VND`;
   };
 
   const parseBudgetInput = (text: string): number => {
@@ -114,19 +114,19 @@ const CategoryEditScreen: React.FC<CategoryEditScreenProps> = ({
     }
 
     if (amount < 50000) {
-      setError('Hạn mức tối thiểu là 50.000đ');
+      setError('Hạn mức tối thiểu là 50.000 VND');
       return;
     }
 
     if (amount > 100000000) {
-      setError('Hạn mức tối đa là 100.000.000đ');
+      setError('Hạn mức tối đa là 100.000.000 VND');
       return;
     }
 
     // Validate: total budget should not exceed monthly income
     const newTotalBudget = currentTotalBudget - (categoryBudget?.budgetLimit || 0) + amount;
     if (newTotalBudget > totalIncome) {
-      setError(`Tổng hạn mức (${formatCurrency(newTotalBudget)}đ) vượt thu nhập (${formatCurrency(totalIncome)}đ)`);
+      setError(`Tổng hạn mức (${formatCurrency(newTotalBudget)}) vượt thu nhập (${formatCurrency(totalIncome)})`);
       return;
     }
 
@@ -176,7 +176,7 @@ const CategoryEditScreen: React.FC<CategoryEditScreenProps> = ({
           <View style={styles.categoryInfo}>
             <Text style={styles.categoryName}>{category?.name || 'Khác'}</Text>
             <Text style={styles.categorySubtitle}>
-              Đã chi: {formatCurrency(categoryBudget?.spent || 0)}đ
+              Đã chi: {formatCurrency(categoryBudget?.spent || 0)}
             </Text>
           </View>
         </View>
@@ -186,12 +186,12 @@ const CategoryEditScreen: React.FC<CategoryEditScreenProps> = ({
           <View style={styles.incomeRow}>
             <View style={styles.incomeItem}>
               <Text style={styles.incomeLabel}>Thu nhập tháng</Text>
-              <Text style={styles.incomeValue}>{formatCurrency(totalIncome)}đ</Text>
+              <Text style={styles.incomeValue}>{formatCurrency(totalIncome)}</Text>
             </View>
             <View style={styles.incomeDivider} />
             <View style={styles.incomeItem}>
               <Text style={styles.incomeLabel}>Tổng hạn mức hiện tại</Text>
-              <Text style={styles.incomeValue}>{formatCurrency(currentTotalBudget - (categoryBudget?.budgetLimit || 0))}đ</Text>
+              <Text style={styles.incomeValue}>{formatCurrency(currentTotalBudget - (categoryBudget?.budgetLimit || 0))}</Text>
             </View>
           </View>
         </View>
@@ -210,7 +210,7 @@ const CategoryEditScreen: React.FC<CategoryEditScreenProps> = ({
               placeholder="0"
               placeholderTextColor={Colors.textMuted}
             />
-            <Text style={styles.currencySuffix}>đ</Text>
+            <Text style={styles.currencySuffix}>VND</Text>
           </View>
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -235,7 +235,7 @@ const CategoryEditScreen: React.FC<CategoryEditScreenProps> = ({
               styles.totalPreviewValue,
               (currentTotalBudget - (categoryBudget?.budgetLimit || 0) + parseBudgetInput(budgetLimit)) > totalIncome && styles.totalPreviewDanger
             ]}>
-              {formatCurrency(currentTotalBudget - (categoryBudget?.budgetLimit || 0) + parseBudgetInput(budgetLimit))}đ
+              {formatCurrency(currentTotalBudget - (categoryBudget?.budgetLimit || 0) + parseBudgetInput(budgetLimit))}
             </Text>
           </View>
         </View>
@@ -245,13 +245,13 @@ const CategoryEditScreen: React.FC<CategoryEditScreenProps> = ({
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Hạn mức mới</Text>
             <Text style={styles.infoValue}>
-              {budgetLimit ? formatCurrency(parseBudgetInput(budgetLimit)) : '0'}đ
+              {budgetLimit ? formatCurrency(parseBudgetInput(budgetLimit)) : '0 VND'}
             </Text>
           </View>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Đã chi</Text>
             <Text style={[styles.infoValue, styles.expenseText]}>
-              {formatCurrency(categoryBudget?.spent || 0)}đ
+              {formatCurrency(categoryBudget?.spent || 0)}
             </Text>
           </View>
           <View style={[styles.infoRow, styles.remainingRow]}>
@@ -263,7 +263,7 @@ const CategoryEditScreen: React.FC<CategoryEditScreenProps> = ({
                 { color: remaining >= 0 ? Colors.success : Colors.danger },
               ]}
             >
-              {formatCurrency(remaining)}đ
+              {formatCurrency(remaining)}
             </Text>
           </View>
         </View>

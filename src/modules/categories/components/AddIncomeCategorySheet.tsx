@@ -38,16 +38,16 @@ interface AddIncomeCategorySheetProps {
 }
 
 const COLOR_OPTIONS = [
-  '#4CAF50', // Green
-  '#8BC34A', // Light Green
-  '#009688', // Teal
+  '#167B63', // Primary Green
+  '#2ECC71', // Emerald
+  '#3498DB', // Blue
+  '#9B59B6', // Purple
+  '#F39C12', // Amber
+  '#E67E22', // Orange
+  '#E74C3C', // Red
+  '#E91E63', // Pink
   '#00BCD4', // Cyan
-  '#03A9F4', // Light Blue
-  '#2196F3', // Blue
-  '#66BB6A', // Medium Green
-  '#81C784', // Lighter Green
-  '#A5D6A7', // Lightest Green
-  '#388E3C', // Dark Green
+  '#3F51B5', // Indigo
   '#795548', // Brown
   '#607D8B', // Blue Grey
 ];

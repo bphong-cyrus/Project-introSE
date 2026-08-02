@@ -151,7 +151,7 @@ const TransactionDetailScreen: React.FC<TransactionDetailScreenProps> = ({
             styles.heroAmount,
             { color: isExpense ? '#E74C3C' : '#2ECC71' }
           ]}>
-            {isExpense ? '-' : '+'} {formatVND(transaction.amount)} đ
+            {isExpense ? '-' : '+'}{formatVND(transaction.amount)}
           </Text>
 
           {/* Category Name */}

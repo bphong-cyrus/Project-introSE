@@ -46,7 +46,7 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ transaction, onPress 
         styles.amount,
         { color: isExpense ? '#E74C3C' : '#2ECC71' }
       ]}>
-        {isExpense ? '-' : '+'}VND {formatVND(transaction.amount)}
+        {isExpense ? '-' : '+'}{formatVND(transaction.amount)}
       </Text>
     </TouchableOpacity>
   );

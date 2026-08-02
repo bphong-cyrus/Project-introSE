@@ -98,7 +98,7 @@ const BudgetCategoryCard: React.FC<BudgetCategoryCardProps> = ({
   const isDefault = category?.isDefault || false;
 
   const formatCurrency = (amount: number): string => {
-    return new Intl.NumberFormat('vi-VN').format(amount);
+    return `${new Intl.NumberFormat('vi-VN').format(amount)} VND`;
   };
 
   // Mini pie chart calculations
@@ -152,20 +152,20 @@ const BudgetCategoryCard: React.FC<BudgetCategoryCardProps> = ({
 
         <View style={styles.row}>
           <Text style={styles.label}>Hạn mức:</Text>
-          <Text style={styles.value}>{formatCurrency(categoryBudget.budgetLimit)}đ</Text>
+          <Text style={styles.value}>{formatCurrency(categoryBudget.budgetLimit)}</Text>
         </View>
 
         <View style={styles.row}>
           <Text style={styles.label}>Đã chi:</Text>
           <Text style={[styles.value, styles.expenseValue]}>
-            {formatCurrency(categoryBudget.spent)}đ
+            {formatCurrency(categoryBudget.spent)}
           </Text>
         </View>
 
         <View style={styles.row}>
           <Text style={styles.label}>Còn lại:</Text>
           <Text style={[styles.value, remaining >= 0 ? styles.remainingPositive : styles.remainingNegative]}>
-            {formatCurrency(remaining)}đ
+            {formatCurrency(remaining)}
           </Text>
         </View>
 

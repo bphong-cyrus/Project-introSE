@@ -58,7 +58,7 @@ const IncomeCategoryCard: React.FC<IncomeCategoryCardProps> = ({
   const isDefault = category?.isDefault || false;
 
   const formatCurrency = (value: number): string => {
-    return new Intl.NumberFormat('vi-VN').format(value);
+    return `${new Intl.NumberFormat('vi-VN').format(value)} VND`;
   };
 
   return (
@@ -90,7 +90,7 @@ const IncomeCategoryCard: React.FC<IncomeCategoryCardProps> = ({
       {/* Amount */}
       <View style={styles.amountContainer}>
         <Text style={[styles.amount, { color: Colors.income }]}>
-          +{formatCurrency(amount)}đ
+          +{formatCurrency(amount)}
         </Text>
       </View>
 

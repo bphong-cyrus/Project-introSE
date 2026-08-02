@@ -57,6 +57,7 @@ const AppContent: React.FC = () => {
   const [historyScreen, setHistoryScreen] = useState<HistoryScreen>('list');
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const [selectedHistoryDate, setSelectedHistoryDate] = useState<Date | null>(null);
 
   // Handle splash screen ready
   const handleSplashReady = useCallback(() => {
@@ -98,11 +99,23 @@ const AppContent: React.FC = () => {
   const handleTabPress = (tab: TabName) => {
     setActiveTab(tab);
     setAddFlowScreen('main');
+    if (tab !== 'Transactions') {
+      setSelectedHistoryDate(null);
+    }
     if (activeTab === 'Transactions' && tab !== 'Transactions') {
       setHistoryScreen('list');
       setSelectedTransactionId(null);
       setSelectedTransaction(null);
     }
+  };
+
+  const handleHomeDateSelect = (date: Date) => {
+    setSelectedHistoryDate(date);
+    setHistoryScreen('list');
+    setSelectedTransactionId(null);
+    setSelectedTransaction(null);
+    setActiveTab('Transactions');
+    setAddFlowScreen('main');
   };
 
   const handleAddPress = () => {
@@ -133,6 +146,14 @@ const AppContent: React.FC = () => {
     setSelectedTransaction(transaction);
     setSelectedTransactionId(transaction.id);
     setHistoryScreen('detail');
+  };
+
+  const handleHistoryBack = () => {
+    setHistoryScreen('list');
+    setSelectedTransactionId(null);
+    setSelectedTransaction(null);
+    setSelectedHistoryDate(null);
+    setActiveTab('Home');
   };
 
   const handleDetailBack = () => {
@@ -251,8 +272,10 @@ const AppContent: React.FC = () => {
 
       return (
         <TransactionHistoryScreen
+          onBack={handleHistoryBack}
           onTransactionPress={handleTransactionPress}
           showTopBar={true}
+          selectedDate={selectedHistoryDate}
         />
       );
     };
@@ -290,7 +313,7 @@ const AppContent: React.FC = () => {
 
     switch (activeTab) {
       case 'Home':
-        return <HomeScreen onTabChange={handleTabPress} />;
+        return <HomeScreen onTabChange={handleTabPress} onDateSelect={handleHomeDateSelect} />;
       case 'Transactions':
         return renderTransactionsContent();
       case 'Budget':
@@ -298,7 +321,7 @@ const AppContent: React.FC = () => {
       case 'Profile':
         return <ProfileScreen />;
       default:
-        return <HomeScreen onTabChange={handleTabPress} />;
+        return <HomeScreen onTabChange={handleTabPress} onDateSelect={handleHomeDateSelect} />;
     }
   };
 

@@ -94,7 +94,7 @@ const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> = ({
   );
 
   const formatCurrency = (amount: number): string => {
-    return new Intl.NumberFormat('vi-VN').format(amount);
+    return `${new Intl.NumberFormat('vi-VN').format(amount)} VND`;
   };
 
   const formatDate = (dateStr: string): string => {
@@ -149,7 +149,7 @@ const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> = ({
 
       <View style={styles.transactionAmount}>
         <Text style={[styles.amountText, { color: amountColor }]}>
-          {amountPrefix}{formatCurrency(item.amount)}đ
+          {amountPrefix}{formatCurrency(item.amount)}
         </Text>
       </View>
     </View>
@@ -205,7 +205,7 @@ const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> = ({
         <View style={styles.totalContainer}>
           <Text style={styles.totalLabel}>{totalLabel}</Text>
           <Text style={[styles.totalAmount, { color: amountColor }]}>
-            {amountPrefix}{formatCurrency(totalFiltered)}đ
+            {amountPrefix}{formatCurrency(totalFiltered)}
           </Text>
         </View>
       </View>
