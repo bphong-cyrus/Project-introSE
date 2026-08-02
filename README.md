@@ -97,6 +97,7 @@ Project-introSE/
             ├── routes/aiScanner.routes.js
             ├── controllers/aiScanner.controller.js
             ├── services/geminiClient.js
+            ├── services/geminiKeyPool.js  ← key rotation + auto-failover
             ├── services/receiptParser.js
             └── middleware/{upload,errorHandler}.js
 ```
@@ -112,4 +113,4 @@ Project-introSE/
 | Skill-level tip "chưa cài expo-image-picker" | `expo-image-picker@17` đã cài, permissions requested at runtime |
 
 See [`src/modules/ai-scanner/README.md`](src/modules/ai-scanner/README.md) for module-level details
-and [`src/backend/`](src/backend/) for the Express side.
+and [`src/backend/README.md`](src/backend/README.md) for **how to run the backend** (for GV inspection).
