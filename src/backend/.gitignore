@@ -1,0 +1,15 @@
+# Server-side gitignore for the AI scanner business layer.
+
+# Never commit the actual API key.
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Local uploads
+uploads/
+
+# Logs
+*.log

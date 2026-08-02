@@ -2,7 +2,7 @@
 // Frame 10: Collapsible receipt preview thumbnail
 
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
 
@@ -10,9 +10,15 @@ interface ReceiptPreviewProps {
   storeName: string;
   dateString: string;
   confidenceLevel: number;
+  imageUri?: string;
 }
 
-const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({ storeName, dateString, confidenceLevel }) => {
+const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({
+  storeName,
+  dateString,
+  confidenceLevel,
+  imageUri,
+}) => {
   const [expanded, setExpanded] = useState(true);
 
   return (
@@ -32,16 +38,23 @@ const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({ storeName, dateString, 
       {/* Receipt thumbnail */}
       {expanded && (
         <View style={styles.previewCard}>
-          <View style={styles.thumbnail}>
-            {/* Placeholder receipt icon */}
-            <View style={styles.thumbnailContent}>
-              <View style={styles.thumbnailRow} />
-              <View style={styles.thumbnailRow} />
-              <View style={styles.thumbnailRowShort} />
-              <View style={styles.thumbnailRow} />
-              <View style={styles.thumbnailRowShort} />
+          {imageUri ? (
+            <Image
+              source={{ uri: imageUri }}
+              style={styles.receiptImage}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={styles.thumbnail}>
+              <View style={styles.thumbnailContent}>
+                <View style={styles.thumbnailRow} />
+                <View style={styles.thumbnailRow} />
+                <View style={styles.thumbnailRowShort} />
+                <View style={styles.thumbnailRow} />
+                <View style={styles.thumbnailRowShort} />
+              </View>
             </View>
-          </View>
+          )}
           <View style={styles.infoContainer}>
             <Text style={styles.storeName}>{storeName}</Text>
             <Text style={styles.dateText}>
@@ -100,6 +113,12 @@ const styles = StyleSheet.create({
     marginRight: 12,
     borderWidth: 1,
     borderColor: '#E0E0E0',
+  },
+  receiptImage: {
+    width: 64,
+    height: 80,
+    borderRadius: 8,
+    marginRight: 12,
   },
   thumbnailContent: {
     width: '70%',

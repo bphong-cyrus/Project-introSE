@@ -1,6 +1,19 @@
 // SmartSpend AI - AI Scanner Screen (Frame 9)
 // UC13: AI Receipt Scanner Entry
-// Note: Image picker requires expo-image-picker package (install when ready for production)
+//
+// This screen captures a photo of a receipt (via camera or gallery) using
+// expo-image-picker, sends the image to the Gemini API (vision model), and
+// forwards the structured extraction result to AIResultScreen for review.
+//
+// The previous mock implementation (random amounts, hard-coded "Cửa hàng")
+// has been replaced by:
+//   - services/imageHelper.ts       : camera/gallery + base64 conversion
+//   - services/backendClient.ts     : HTTP client -> Express backend
+//   - services/receiptAnalyzer.ts   : façade that maps mobile types
+//   - services/aiConfig.ts          : backend URL config
+//
+// Gemini itself lives on the server (src/backend/src/services/geminiClient.js)
+// so the API key never ships in the mobile bundle.
 
 import React, { useState, useCallback, useEffect } from 'react';
 import {
@@ -13,12 +26,24 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
+import { useCategories } from '../../../state/CategoryContext';
 import CameraViewfinder from '../components/CameraViewfinder';
 import ProcessingOverlay from '../components/ProcessingOverlay';
+import {
+  pickFromCamera,
+  pickFromGallery,
+  PickedImage,
+} from '../services/imageHelper';
+import {
+  analyzeReceipt,
+  GeminiApiError,
+} from '../services/receiptAnalyzer';
+import { pingBackend } from '../services/backendClient';
+import { API_BASE_URL } from '../services/aiConfig';
 
 interface AIScannerScreenProps {
   onClose: () => void;
-  onCapture: (mockData: ExtractedReceiptData) => void;
+  onCapture: (data: ExtractedReceiptData) => void;
 }
 
 export interface ExtractedReceiptData {
@@ -42,98 +67,110 @@ export interface ExtractedReceiptData {
 type PermissionState = 'pending' | 'granted' | 'denied';
 
 const AIScannerScreen: React.FC<AIScannerScreenProps> = ({ onClose, onCapture }) => {
+  const { allCategories } = useCategories();
   const [cameraPermission, setCameraPermission] = useState<PermissionState>('pending');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [lastImageUri, setLastImageUri] = useState<string | undefined>(undefined);
+  const [backendReady, setBackendReady] = useState<boolean | null>(null);
 
   useEffect(() => {
-    // Simulate permission granted for demo
-    setTimeout(() => {
-      setCameraPermission('granted');
-    }, 500);
+    let cancelled = false;
+    (async () => {
+      const { status } = await import('expo-image-picker').then((m) =>
+        m.getCameraPermissionsAsync(),
+      );
+      if (cancelled) return;
+      setCameraPermission(status === 'granted' ? 'granted' : 'pending');
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const handleCapture = useCallback(() => {
+  // Probe the backend on mount so we can warn early if it's unreachable.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const ping = await pingBackend();
+      if (!cancelled) setBackendReady(ping.ok);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /* ----------------------------- Handlers -------------------------------- */
+
+  const runAnalysis = useCallback(
+    async (image: PickedImage) => {
+      setIsProcessing(true);
+      try {
+        const result = await analyzeReceipt({
+          base64: image.base64,
+          mediaType: image.mediaType,
+          uri: image.uri,
+          categories: allCategories,
+        });
+
+        onCapture(result.data);
+      } catch (err: any) {
+        const title =
+          err instanceof GeminiApiError ? 'Lỗi AI Scanner' : 'Không thể phân tích hóa đơn';
+        const detail =
+          err?.message ||
+          'Đã có lỗi khi gọi backend. Vui lòng kiểm tra kết nối mạng và thử lại.';
+        Alert.alert(title, detail, [
+          { text: 'Thử lại', onPress: () => {} },
+          { text: 'Đóng', style: 'cancel' },
+        ]);
+      } finally {
+        setIsProcessing(false);
+      }
+    },
+    [allCategories, onCapture],
+  );
+
+  const handleCapture = useCallback(async () => {
     if (cameraPermission === 'denied') {
       Alert.alert(
         'Quyền truy cập Camera bị từ chối',
         'Vui lòng bật trong Cài đặt hoặc chọn ảnh từ Thư viện',
-        [{ text: 'OK' }]
+        [{ text: 'OK' }],
       );
       return;
     }
 
-    setIsProcessing(true);
+    let image: PickedImage | null = null;
+    try {
+      image = await pickFromCamera();
+    } catch (e: any) {
+      Alert.alert('Lỗi camera', e?.message ?? 'Không thể mở camera.', [{ text: 'OK' }]);
+      return;
+    }
+    if (!image) return; // user cancelled
 
-    // Simulate AI processing with mock data
-    setTimeout(() => {
-      const isSuccess = Math.random() > 0.1;
+    setCameraPermission('granted');
+    setLastImageUri(image.uri);
+    await runAnalysis(image);
+  }, [cameraPermission, runAnalysis]);
 
-      setIsProcessing(false);
+  const handleChooseFromGallery = useCallback(async () => {
+    let image: PickedImage | null = null;
+    try {
+      image = await pickFromGallery();
+    } catch (e: any) {
+      Alert.alert('Lỗi thư viện ảnh', e?.message ?? 'Không thể mở thư viện ảnh.', [
+        { text: 'OK' },
+      ]);
+      return;
+    }
+    if (!image) return;
 
-      if (isSuccess) {
-        const isExpense = Math.random() > 0.15;
-        const mockData: ExtractedReceiptData = {
-          amount: Math.floor(Math.random() * 500000) + 50000,
-          storeName: 'Cửa hàng',
-          date: new Date(),
-          categoryId: isExpense ? 'exp-cat-1' : 'inc-cat-1',
-          categoryName: isExpense ? 'Ăn uống' : 'Thu nhập khác',
-          note: '',
-          type: isExpense ? 'expense' : 'income',
-          confidence: {
-            amount: Math.floor(Math.random() * 15) + 80,
-            storeName: Math.floor(Math.random() * 15) + 80,
-            date: Math.floor(Math.random() * 15) + 80,
-            category: Math.floor(Math.random() * 15) + 75,
-            type: Math.floor(Math.random() * 15) + 80,
-          },
-        };
-        onCapture(mockData);
-      } else {
-        Alert.alert(
-          'Không thể nhận diện hình ảnh',
-          'Vui lòng chụp lại hoặc chọn ảnh khác',
-          [
-            { text: 'Thử lại', onPress: () => {} },
-          ]
-        );
-      }
-    }, 2500);
-  }, [cameraPermission, onCapture]);
+    setLastImageUri(image.uri);
+    await runAnalysis(image);
+  }, [runAnalysis]);
 
-  const handleChooseFromGallery = useCallback(() => {
-    Alert.alert(
-      'Chọn ảnh từ thư viện',
-      'Tính năng chọn ảnh từ thư viện sẽ khả dụng khi cài đặt expo-image-picker.\n\nHiện tại đang dùng mock data để demo.',
-      [
-        { text: 'OK', onPress: () => {} },
-        { text: 'Dùng mock data', onPress: () => {
-          setIsProcessing(true);
-          setTimeout(() => {
-            setIsProcessing(false);
-            const isExpense = Math.random() > 0.15;
-            const mockData: ExtractedReceiptData = {
-              amount: 235000,
-              storeName: 'Circle K',
-              date: new Date(),
-              categoryId: isExpense ? 'exp-cat-1' : 'inc-cat-1',
-              categoryName: isExpense ? 'Ăn uống' : 'Thu nhập khác',
-              note: 'Nước uống + snack',
-              type: isExpense ? 'expense' : 'income',
-              confidence: {
-                amount: 87,
-                storeName: 92,
-                date: 88,
-                category: 85,
-                type: 90,
-              },
-            };
-            onCapture(mockData);
-          }, 2000);
-        }},
-      ]
-    );
-  }, [onCapture]);
+  /* ------------------------------ Render --------------------------------- */
 
   return (
     <View style={styles.container}>
@@ -153,13 +190,12 @@ const AIScannerScreen: React.FC<AIScannerScreenProps> = ({ onClose, onCapture })
       >
         {/* Camera Viewfinder - 3:4 portrait ratio */}
         <CameraViewfinder
-          hasPermission={cameraPermission === 'granted'}
-          onRequestPermission={() => {}}
+          hasPermission={cameraPermission !== 'denied'}
+          onRequestPermission={() => setCameraPermission('granted')}
         />
 
         {/* Capture Controls */}
         <View style={styles.captureControls}>
-          {/* Folder/Gallery Button */}
           <TouchableOpacity
             style={styles.folderButton}
             onPress={handleChooseFromGallery}
@@ -168,7 +204,6 @@ const AIScannerScreen: React.FC<AIScannerScreenProps> = ({ onClose, onCapture })
             <Ionicons name="folder-open-outline" size={24} color={Colors.textPrimary} />
           </TouchableOpacity>
 
-          {/* Capture Button */}
           <TouchableOpacity
             style={[
               styles.captureButton,
@@ -181,9 +216,26 @@ const AIScannerScreen: React.FC<AIScannerScreenProps> = ({ onClose, onCapture })
             <View style={styles.captureButtonInner} />
           </TouchableOpacity>
 
-          {/* Spacer for symmetry */}
           <View style={styles.folderButton} />
         </View>
+
+        {/* Status hint */}
+        {lastImageUri ? (
+          <View style={styles.statusBox}>
+            <Ionicons name="checkmark-circle" size={16} color={Colors.success} />
+            <Text style={styles.statusText}>Đã chụp ảnh, AI đang phân tích...</Text>
+          </View>
+        ) : null}
+
+        {/* Backend status hint */}
+        {backendReady === false ? (
+          <View style={[styles.statusBox, styles.statusBoxWarn]}>
+            <Ionicons name="cloud-offline-outline" size={16} color={Colors.warning} />
+            <Text style={[styles.statusText, { color: Colors.warning }]}>
+              Không kết nối được tới backend ({API_BASE_URL}). Hãy chạy `npm start` trong thư mục backend/.
+            </Text>
+          </View>
+        ) : null}
 
         {/* Processing Tips */}
         <View style={styles.tipsSection}>
@@ -286,6 +338,25 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: 28,
     backgroundColor: Colors.primary,
+  },
+  statusBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+    gap: 6,
+    paddingHorizontal: 12,
+  },
+  statusBoxWarn: {
+    backgroundColor: '#FFF7E0',
+    borderRadius: 8,
+    paddingVertical: 8,
+    marginHorizontal: 4,
+  },
+  statusText: {
+    fontSize: 13,
+    color: Colors.success,
+    fontWeight: '500',
   },
   tipsSection: {
     marginTop: 32,

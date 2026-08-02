@@ -17,9 +17,14 @@
     "expo": "~54.0.0",
     "expo-asset": "~11.0.0",
     "expo-constants": "~17.0.0",
+<<<<<<< Updated upstream
     "expo-font": "~14.0.12",
     "expo-image-picker": "~17.0.11",
     "expo-linear-gradient": "~15.0.8",
+=======
+    "expo-font": "~13.0.0",
+    "expo-image-picker": "~17.0.0",
+>>>>>>> Stashed changes
     "expo-splash-screen": "~0.30.0",
     "expo-status-bar": "~2.0.0",
     "react": "18.3.1",
@@ -33,7 +38,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.0",
-    "@types/react": "^18.3.31",
-    "typescript": "^6.0.3"
+    "@types/react": "~19.1.10",
+    "typescript": "~5.9.2"
   }
 }
