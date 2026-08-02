@@ -3,7 +3,7 @@
 // Auto-redirects based on auth state
 
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Easing } from 'react-native';
+import { View, Text, StyleSheet, Animated, Easing, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient'; // Optional gradient
 import { Colors } from '../../../shared/constants/colors';
 import { useAuth } from '../../../state/AuthContext';
@@ -84,7 +84,11 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onReady }) => {
         {/* App Icon */}
         <View style={styles.iconWrapper}>
           <View style={styles.iconContainer}>
-            <Text style={styles.iconText}>💰</Text>
+            <Image
+              source={require('../../../img/smartspend-logo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
           </View>
         </View>
 
@@ -150,8 +154,9 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: 'rgba(255, 255, 255, 0.3)',
   },
-  iconText: {
-    fontSize: 56,
+  logoImage: {
+    width: 96,
+    height: 96,
   },
   appName: {
     fontSize: 36,
