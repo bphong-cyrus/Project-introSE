@@ -3,6 +3,7 @@
 // Handles: login, register, logout, OTP verification, password reset
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { Platform } from 'react-native';
 import { supabase, Database } from '../data/datasources/supabase/supabase';
 import { User } from '../shared/types';
 
@@ -59,6 +60,9 @@ type AuthUserLike = {
   email?: string;
   user_metadata?: {
     full_name?: string;
+    name?: string;
+    avatar_url?: string;
+    picture?: string;
     onboarding_completed?: boolean;
   };
 };
@@ -66,7 +70,8 @@ type AuthUserLike = {
 const mapAuthUser = (authUser: AuthUserLike, fallbackFullName = ''): User => ({
   id: authUser.id,
   email: authUser.email || '',
-  fullName: authUser.user_metadata?.full_name || fallbackFullName,
+  fullName: authUser.user_metadata?.full_name || authUser.user_metadata?.name || fallbackFullName,
+  avatar: authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture,
   createdAt: new Date(),
 });
 
@@ -81,9 +86,53 @@ const isProfileComplete = (
   return Boolean(
     profile?.date_of_birth ||
     profile?.job ||
-    profile?.initial_income != null ||
-    profile?.avatar_url
+    profile?.initial_income != null
   );
+};
+
+const getAuthRedirectUrl = (path: string): string => {
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin;
+  }
+
+  return `smartspendai://${path.replace(/^\//, '')}`;
+};
+
+const getOAuthUrlParam = (key: string): string | null => {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') {
+    return null;
+  }
+
+  const searchParams = new URLSearchParams(window.location.search);
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  return searchParams.get(key) || hashParams.get(key);
+};
+
+const clearOAuthUrlParams = () => {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') {
+    return;
+  }
+
+  window.history.replaceState({}, document.title, window.location.pathname);
+};
+
+const exchangeOAuthCodeIfPresent = async (): Promise<string | null> => {
+  const oauthError = getOAuthUrlParam('error_description') || getOAuthUrlParam('error');
+  if (oauthError) {
+    clearOAuthUrlParams();
+    return decodeURIComponent(oauthError.replace(/\+/g, ' '));
+  }
+
+  const code = getOAuthUrlParam('code');
+  if (code && Platform.OS === 'web' && typeof window !== 'undefined') {
+    const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(window.location.href);
+    clearOAuthUrlParams();
+    if (exchangeError) {
+      return exchangeError.message;
+    }
+  }
+
+  return null;
 };
 
 // Helper to calculate age from date of birth
@@ -109,6 +158,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => {
     const initializeAuth = async () => {
       try {
+        const oauthCallbackError = await exchangeOAuthCodeIfPresent();
+        if (oauthCallbackError) {
+          setError(oauthCallbackError);
+          setAuthState('unauthenticated');
+          return;
+        }
+
         // Get current session
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
@@ -408,7 +464,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const { error: googleError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: 'smartspendai://login-callback',
+          redirectTo: getAuthRedirectUrl('/login-callback'),
         },
       });
 

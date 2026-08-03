@@ -129,6 +129,13 @@ const LoginScreen: React.FC<LoginScreenProps> = ({
 
         {/* Form */}
         <View style={styles.form}>
+          {error ? (
+            <View style={styles.authErrorContainer}>
+              <Ionicons name="alert-circle" size={18} color={Colors.danger} />
+              <Text style={styles.authErrorText}>{error}</Text>
+            </View>
+          ) : null}
+
           {/* Email Input */}
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Email</Text>
@@ -276,17 +283,15 @@ const styles = StyleSheet.create({
     marginBottom: 40,
   },
   logoContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 20,
-    backgroundColor: Colors.primary + '15',
+    width: '100%',
+    height: 150,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 16,
   },
   logoImage: {
-    width: 72,
-    height: 72,
+    width: 300,
+    height: 140,
   },
   title: {
     fontSize: 28,
@@ -300,6 +305,20 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: 20,
+  },
+  authErrorContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    borderRadius: 12,
+    backgroundColor: Colors.danger + '10',
+    padding: 12,
+  },
+  authErrorText: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.danger,
+    lineHeight: 18,
   },
   inputGroup: {
     marginBottom: 4,

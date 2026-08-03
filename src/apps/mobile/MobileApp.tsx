@@ -2,7 +2,7 @@
 // React Native with Expo
 // Handles Authentication Flow + Main App Navigation
 
-import React, { useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -58,6 +58,18 @@ const AppContent: React.FC = () => {
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [selectedHistoryDate, setSelectedHistoryDate] = useState<Date | null>(null);
+
+  useEffect(() => {
+    if (authState === 'authenticated') {
+      setAuthScreen('login');
+      setActiveTab('Home');
+      setAddFlowScreen('main');
+      setHistoryScreen('list');
+      setSelectedTransactionId(null);
+      setSelectedTransaction(null);
+      setSelectedHistoryDate(null);
+    }
+  }, [authState]);
 
   // Handle splash screen ready
   const handleSplashReady = useCallback(() => {
@@ -336,7 +348,6 @@ const AppContent: React.FC = () => {
       <View style={styles.container}>
         <ProfileSetupScreen
           onComplete={handleAuthSuccess}
-          onSkip={handleAuthSuccess}
         />
         <StatusBar style="dark" />
       </View>

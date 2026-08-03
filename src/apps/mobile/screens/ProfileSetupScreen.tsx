@@ -19,7 +19,6 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
-  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
@@ -30,6 +29,46 @@ interface ProfileSetupScreenProps {
   onSkip?: () => void;
 }
 
+const formatDateForDisplay = (isoDate: string): string => {
+  const match = isoDate.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return '';
+  return `${match[3]}/${match[2]}/${match[1]}`;
+};
+
+const parseDisplayDateToISO = (displayDate: string): string | undefined => {
+  const match = displayDate.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return undefined;
+
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  const today = new Date();
+
+  if (year < 1900 || year > today.getFullYear() || month < 1 || month > 12 || day < 1) {
+    return undefined;
+  }
+
+  const date = new Date(year, month - 1, day);
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day ||
+    date > today
+  ) {
+    return undefined;
+  }
+
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+};
+
+const parseCurrencyInput = (value: string): number | undefined => {
+  const numericValue = value.replace(/[^\d]/g, '');
+  if (!numericValue) return undefined;
+
+  const amount = Number(numericValue);
+  return Number.isSafeInteger(amount) && amount >= 0 ? amount : undefined;
+};
+
 const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
   onComplete,
   onSkip,
@@ -38,12 +77,11 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
 
   // Form state
   const [fullName, setFullName] = useState(user?.fullName || '');
-  const [dateOfBirth, setDateOfBirth] = useState('');
-  const [occupation, setOccupation] = useState('');
-  const [monthlyIncome, setMonthlyIncome] = useState('');
-
-  // Modal states
-  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [dateOfBirth, setDateOfBirth] = useState(user?.dateOfBirth ? formatDateForDisplay(user.dateOfBirth) : '');
+  const [occupation, setOccupation] = useState(user?.job || '');
+  const [monthlyIncome, setMonthlyIncome] = useState(
+    user?.income != null ? user.income.toLocaleString('vi-VN') : ''
+  );
 
   // Validation errors
   const [errors, setErrors] = useState<{
@@ -52,17 +90,26 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
     income?: string;
   }>({});
 
-  // Validate date format (DD/MM/YYYY)
-  const validateDate = (date: string): boolean => {
-    const dateRegex = /^(0?[1-9]|[12][0-9]|3[01])\/(0?[1-9]|1[012])\/\d{4}$/;
-    return dateRegex.test(date);
+  useEffect(() => {
+    setFullName(user?.fullName || '');
+    setDateOfBirth(user?.dateOfBirth ? formatDateForDisplay(user.dateOfBirth) : '');
+    setOccupation(user?.job || '');
+    setMonthlyIncome(user?.income != null ? user.income.toLocaleString('vi-VN') : '');
+  }, [user]);
+
+  const handleDateChange = (value: string) => {
+    const digits = value.replace(/\D/g, '').slice(0, 8);
+    const parts = [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean);
+    setDateOfBirth(parts.join('/'));
+    if (errors.dateOfBirth) {
+      setErrors((prev) => ({ ...prev, dateOfBirth: undefined }));
+    }
   };
 
   // Validate income
   const validateIncome = (income: string): boolean => {
     if (!income) return true; // Income is optional
-    const num = parseInt(income.replace(/,/g, ''), 10);
-    return !isNaN(num) && num >= 0;
+    return parseCurrencyInput(income) !== undefined;
   };
 
   // Format currency input
@@ -95,7 +142,7 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
     }
 
     // Date of birth validation (optional but must be valid if provided)
-    if (dateOfBirth && !validateDate(dateOfBirth)) {
+    if (dateOfBirth && !parseDisplayDateToISO(dateOfBirth)) {
       newErrors.dateOfBirth = 'Ngày sinh không hợp lệ (DD/MM/YYYY)';
     }
 
@@ -114,28 +161,14 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
       return;
     }
 
-    // Parse date of birth
-    let age: number | undefined;
-    if (dateOfBirth) {
-      const parts = dateOfBirth.split('/');
-      if (parts.length === 3) {
-        const birthDate = new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
-        const today = new Date();
-        age = today.getFullYear() - birthDate.getFullYear();
-        // Adjust if birthday hasn't occurred this year
-        if (today.getMonth() < birthDate.getMonth() ||
-            (today.getMonth() === birthDate.getMonth() && today.getDate() < birthDate.getDate())) {
-          age--;
-        }
-      }
-    }
+    const normalizedDateOfBirth = dateOfBirth ? parseDisplayDateToISO(dateOfBirth) : undefined;
 
     // Parse income
-    const income = monthlyIncome ? parseInt(monthlyIncome.replace(/,/g, ''), 10) : undefined;
+    const income = parseCurrencyInput(monthlyIncome);
 
     const result = await updateProfile({
       fullName: fullName.trim(),
-      age,
+      dateOfBirth: normalizedDateOfBirth,
       job: occupation.trim() || undefined,
       income,
     });
@@ -238,12 +271,11 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
           {/* Date of Birth Input */}
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Ngày sinh</Text>
-            <TouchableOpacity
+            <View
               style={[
                 styles.inputContainer,
                 errors.dateOfBirth ? styles.inputError : null,
               ]}
-              onPress={() => setShowDatePicker(true)}
             >
               <Ionicons
                 name="calendar-outline"
@@ -256,14 +288,11 @@ const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
                 placeholder="DD/MM/YYYY"
                 placeholderTextColor={Colors.textMuted}
                 value={dateOfBirth}
-                editable={false}
+                onChangeText={handleDateChange}
+                keyboardType="number-pad"
+                maxLength={10}
               />
-              <Ionicons
-                name="chevron-down"
-                size={20}
-                color={Colors.textSecondary}
-              />
-            </TouchableOpacity>
+            </View>
             {errors.dateOfBirth && (
               <Text style={styles.errorText}>{errors.dateOfBirth}</Text>
             )}
