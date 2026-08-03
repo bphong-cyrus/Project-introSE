@@ -21,7 +21,7 @@ export class TransactionRepository {
       type: row.type,
       categoryId: row.category_id,
       note: row.note || undefined,
-      date: new Date(row.expense_date),
+      date: new Date(row.transaction_date),
       imageUrl: row.receipt_id || undefined,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
@@ -37,7 +37,7 @@ export class TransactionRepository {
         .from('transactions')
         .select('*')
         .eq('user_id', userId)
-        .order('expense_date', { ascending: false });
+        .order('transaction_date', { ascending: false });
 
       if (error) {
         console.error('TransactionRepository.getAll error:', error);
@@ -67,9 +67,9 @@ export class TransactionRepository {
         .from('transactions')
         .select('*')
         .eq('user_id', userId)
-        .gte('expense_date', startDate)
-        .lt('expense_date', endDate)
-        .order('expense_date', { ascending: false });
+        .gte('transaction_date', startDate)
+        .lt('transaction_date', endDate)
+        .order('transaction_date', { ascending: false });
 
       if (error) {
         console.error('TransactionRepository.getByMonth error:', error);
@@ -95,7 +95,7 @@ export class TransactionRepository {
         .select('*')
         .eq('user_id', userId)
         .eq('category_id', categoryId)
-        .order('expense_date', { ascending: false });
+        .order('transaction_date', { ascending: false });
 
       if (error) {
         console.error('TransactionRepository.getByCategory error:', error);
@@ -152,7 +152,7 @@ export class TransactionRepository {
           type: transaction.type,
           note: transaction.note || null,
           currency_code: 'VND',
-          expense_date: transaction.date instanceof Date
+          transaction_date: transaction.date instanceof Date
             ? transaction.date.toISOString().split('T')[0]
             : transaction.date,
           payment_method: null,
@@ -191,7 +191,7 @@ export class TransactionRepository {
       if (updates.categoryId !== undefined) updateData.category_id = updates.categoryId;
       if (updates.note !== undefined) updateData.note = updates.note;
       if (updates.date !== undefined) {
-        updateData.expense_date = updates.date instanceof Date
+        updateData.transaction_date = updates.date instanceof Date
           ? updates.date.toISOString().split('T')[0]
           : updates.date;
       }
@@ -253,8 +253,8 @@ export class TransactionRepository {
         .select('amount')
         .eq('user_id', userId)
         .eq('type', 'expense')
-        .gte('expense_date', startDate)
-        .lt('expense_date', endDate);
+        .gte('transaction_date', startDate)
+        .lt('transaction_date', endDate);
 
       if (error) {
         console.error('TransactionRepository.getTotalSpentByMonth error:', error);
@@ -285,8 +285,8 @@ export class TransactionRepository {
         .select('amount')
         .eq('user_id', userId)
         .eq('type', 'income')
-        .gte('expense_date', startDate)
-        .lt('expense_date', endDate);
+        .gte('transaction_date', startDate)
+        .lt('transaction_date', endDate);
 
       if (error) {
         console.error('TransactionRepository.getTotalIncomeByMonth error:', error);
@@ -317,8 +317,8 @@ export class TransactionRepository {
         .select('category_id, amount')
         .eq('user_id', userId)
         .eq('type', 'expense')
-        .gte('expense_date', startDate)
-        .lt('expense_date', endDate);
+        .gte('transaction_date', startDate)
+        .lt('transaction_date', endDate);
 
       if (error) {
         console.error('TransactionRepository.getCategoryBreakdown error:', error);

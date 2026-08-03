@@ -50,7 +50,7 @@ export interface Database {
           description: string;
           amount: number;
           currency_code: string;
-          expense_date: string;
+          transaction_date: string;
           payment_method: string | null;
           source: string | null;
           created_at: string;
