@@ -8,6 +8,7 @@ import { Transaction } from '../shared/types';
 import { transactionRepository } from '../data/repositories';
 import { useAuth } from './AuthContext';
 import { useCategories } from './CategoryContext';
+import { supabase } from '../data/datasources/supabase/supabase';
 
 interface TransactionContextValue {
   transactions: Transaction[];
@@ -60,6 +61,37 @@ export const TransactionProvider: React.FC<{ children: ReactNode }> = ({ childre
     }
   }, [currentUserId, attachCategory]);
 
+  const refreshBudgetForTransaction = useCallback(async (transaction?: Pick<Transaction, 'type' | 'date'> | null) => {
+    if (!currentUserId || !transaction || transaction.type !== 'expense') return;
+
+    const transactionDate = new Date(transaction.date);
+    if (Number.isNaN(transactionDate.getTime())) return;
+
+    const { error } = await supabase.rpc('refresh_user_budget_spending', {
+      target_year: transactionDate.getFullYear(),
+      target_month: transactionDate.getMonth() + 1,
+    });
+
+    if (error) {
+      console.warn('Không thể cập nhật số tiền đã chi trong ngân sách danh mục:', error.message);
+    }
+  }, [currentUserId]);
+
+  const evaluateBudgetWarnings = useCallback(async (
+    ...affectedTransactions: Array<Pick<Transaction, 'type' | 'date'> | null | undefined>
+  ) => {
+    if (!currentUserId) return;
+
+    for (const transaction of affectedTransactions) {
+      await refreshBudgetForTransaction(transaction);
+    }
+
+    const { error } = await supabase.rpc('evaluate_user_budget_notifications');
+    if (error) {
+      console.warn('Không thể kiểm tra cảnh báo ngân sách sau khi cập nhật giao dịch:', error.message);
+    }
+  }, [currentUserId, refreshBudgetForTransaction]);
+
   useEffect(() => {
     refreshTransactions();
   }, [refreshTransactions]);
@@ -71,14 +103,6 @@ export const TransactionProvider: React.FC<{ children: ReactNode }> = ({ childre
   }, [attachCategory]);
 
   const addTransaction = useCallback(async (transactionData: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>): Promise<Transaction> => {
-    const newTransaction: Transaction = attachCategory({
-      ...transactionData,
-      userId: currentUserId,
-      id: `txn-${Date.now()}`,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-
     try {
       // Try to save to Supabase first
       const saved = await transactionRepository.create({
@@ -89,9 +113,12 @@ export const TransactionProvider: React.FC<{ children: ReactNode }> = ({ childre
         categoryId: transactionData.categoryId,
         note: transactionData.note,
         date: transactionData.date,
+        imageUrl: transactionData.imageUrl,
+        source: transactionData.source || (transactionData.imageUrl ? 'ocr' : 'manual'),
       });
 
       if (saved) {
+        await evaluateBudgetWarnings(saved);
         const savedWithCategory = attachCategory(saved);
         setTransactions(prev => [savedWithCategory, ...prev]);
         return savedWithCategory;
@@ -100,19 +127,18 @@ export const TransactionProvider: React.FC<{ children: ReactNode }> = ({ childre
       console.error('Failed to save transaction to DB:', error);
     }
 
-    // Fallback: save locally
-    setTransactions(prev => [newTransaction, ...prev]);
-    return newTransaction;
-  }, [currentUserId, attachCategory]);
+    throw new Error('Không thể lưu giao dịch vào cơ sở dữ liệu.');
+  }, [currentUserId, attachCategory, evaluateBudgetWarnings]);
 
   const updateTransaction = useCallback(async (id: string, updates: Partial<Omit<Transaction, 'id' | 'createdAt'>>): Promise<Transaction | null> => {
-    let updatedTxn: Transaction | null = null;
+    const existingTransaction = transactions.find(txn => txn.id === id);
 
     try {
       // Try to update in Supabase first
       const saved = await transactionRepository.update(id, updates);
 
       if (saved) {
+        await evaluateBudgetWarnings(existingTransaction, saved);
         const savedWithCategory = attachCategory(saved);
         setTransactions(prev => prev.map(txn =>
           txn.id === id ? { ...txn, ...savedWithCategory, updatedAt: new Date() } : txn
@@ -123,33 +149,19 @@ export const TransactionProvider: React.FC<{ children: ReactNode }> = ({ childre
       console.error('Failed to update transaction in DB:', error);
     }
 
-    // Fallback: update locally
-    setTransactions(prev => prev.map(txn => {
-      if (txn.id === id) {
-        updatedTxn = {
-          ...txn,
-          ...updates,
-          updatedAt: new Date(),
-        };
-        updatedTxn = attachCategory(updatedTxn);
-        return updatedTxn;
-      }
-      return txn;
-    }));
-    return updatedTxn;
-  }, [attachCategory]);
+    return null;
+  }, [attachCategory, evaluateBudgetWarnings, transactions]);
 
   const deleteTransaction = useCallback(async (id: string): Promise<void> => {
-    try {
-      // Try to delete from Supabase first
-      await transactionRepository.delete(id);
-    } catch (error) {
-      console.error('Failed to delete transaction from DB:', error);
+    const existingTransaction = transactions.find(txn => txn.id === id);
+    const deleted = await transactionRepository.delete(id);
+    if (!deleted) {
+      throw new Error('Không thể xóa giao dịch khỏi cơ sở dữ liệu.');
     }
 
-    // Remove from local state regardless
+    await evaluateBudgetWarnings(existingTransaction);
     setTransactions(prev => prev.filter(txn => txn.id !== id));
-  }, []);
+  }, [evaluateBudgetWarnings, transactions]);
 
   const getTransaction = useCallback((id: string) => {
     return transactions.find(txn => txn.id === id);

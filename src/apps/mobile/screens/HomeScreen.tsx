@@ -23,6 +23,7 @@ import { Transaction, CategoryBreakdown } from '../../../shared/types';
 import { useTransactions } from '../../../state/TransactionContext';
 import { useCategories } from '../../../state/CategoryContext';
 import { useAuth } from '../../../state/AuthContext';
+import { useNotifications } from '../../../state/NotificationContext';
 
 // ========== HELPER FUNCTIONS ==========
 const formatDate = (date: Date): string => {
@@ -288,9 +289,10 @@ type TabName = 'Home' | 'Transactions' | 'Add' | 'Budget' | 'Profile';
 interface HomeScreenProps {
   onTabChange?: (tab: TabName) => void;
   onDateSelect?: (date: Date) => void;
+  onNotificationsPress?: () => void;
 }
 
-const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange, onDateSelect }) => {
+const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange, onDateSelect, onNotificationsPress }) => {
   const [activeTab, setActiveTab] = useState<TabName>('Home');
   const now = new Date();
   const [selectedChartMonth, setSelectedChartMonth] = useState(now.getMonth());
@@ -299,6 +301,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange, onDateSelect }) =>
   const { transactions } = useTransactions();
   const { expenseCategories } = useCategories();
   const { user } = useAuth();
+  const { unreadCount } = useNotifications();
   const displayName = user?.fullName?.trim() || 'Người dùng';
   const monthButtonLabel = `Tháng ${selectedChartMonth + 1}, ${selectedChartYear}`;
 
@@ -437,8 +440,13 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange, onDateSelect }) =>
 
             {/* Right: Notification & Settings */}
             <View style={styles.headerButtons}>
-              <TouchableOpacity style={styles.headerButton}>
+              <TouchableOpacity style={styles.headerButton} onPress={onNotificationsPress}>
                 <Ionicons name="notifications" size={20} color="#FFFFFF" />
+                {unreadCount > 0 ? (
+                  <View style={styles.notificationBadge}>
+                    <Text style={styles.notificationBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+                  </View>
+                ) : null}
               </TouchableOpacity>
               <TouchableOpacity style={styles.headerButton}>
                 <Ionicons name="settings" size={20} color="#FFFFFF" />
@@ -628,6 +636,26 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
+    position: 'relative',
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#EF4444',
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  notificationBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '800',
   },
 
   // ========== KHUNG 2: SỐ DƯ ==========

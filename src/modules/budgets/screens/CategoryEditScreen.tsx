@@ -48,12 +48,12 @@ const CategoryEditScreen: React.FC<CategoryEditScreenProps> = ({
   const category = categoryBudget?.category;
 
   const [budgetLimit, setBudgetLimit] = useState(
-    categoryBudget?.budgetLimit?.toString() || ''
+    categoryBudget?.budgetLimit !== undefined ? categoryBudget.budgetLimit.toString() : ''
   );
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (categoryBudget?.budgetLimit) {
+    if (categoryBudget?.budgetLimit !== undefined) {
       setBudgetLimit(categoryBudget.budgetLimit.toString());
     }
   }, [categoryBudget]);
@@ -108,13 +108,8 @@ const CategoryEditScreen: React.FC<CategoryEditScreenProps> = ({
   const handleSave = () => {
     const amount = parseBudgetInput(budgetLimit);
 
-    if (amount <= 0) {
-      setError('Vui lòng nhập hạn mức ngân sách hợp lệ');
-      return;
-    }
-
-    if (amount < 50000) {
-      setError('Hạn mức tối thiểu là 50.000 VND');
+    if (amount < 0) {
+      setError('Hạn mức ngân sách không được âm');
       return;
     }
 

@@ -90,6 +90,14 @@ const isProfileComplete = (
   );
 };
 
+const BLOCKED_ACCOUNT_MESSAGE = 'Tài khoản của bạn đã bị khóa bởi Admin.';
+
+const isAccountActive = (profile: Database['public']['Tables']['user_profiles']['Row'] | null) => {
+  if (!profile) return true;
+  const status = (profile.account_status || 'active').trim().toLowerCase();
+  return status === 'active';
+};
+
 const getAuthRedirectUrl = (path: string): string => {
   if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
     return window.location.origin;
@@ -186,6 +194,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             console.error('Profile fetch error:', profileError);
             setUser(mapAuthUser(session.user));
             setAuthState('onboarding');
+          } else if (!isAccountActive(profile)) {
+            await supabase.auth.signOut();
+            setUser(null);
+            setError(BLOCKED_ACCOUNT_MESSAGE);
+            setAuthState('unauthenticated');
           } else if (isProfileComplete(profile, session.user)) {
             setUser(profile ? mapSupabaseUser(profile, session.user.email) : mapAuthUser(session.user));
             setAuthState('authenticated');
@@ -213,7 +226,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           .eq('user_id', session.user.id)
           .maybeSingle();
 
-        if (isProfileComplete(profile, session.user)) {
+        if (!isAccountActive(profile)) {
+          await supabase.auth.signOut();
+          setUser(null);
+          setError(BLOCKED_ACCOUNT_MESSAGE);
+          setAuthState('unauthenticated');
+        } else if (isProfileComplete(profile, session.user)) {
           setUser(profile ? mapSupabaseUser(profile, session.user.email) : mapAuthUser(session.user));
           setAuthState('authenticated');
         } else {
@@ -230,6 +248,31 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase.channel(`profile-status-${user.id}`);
+    channel.on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'user_profiles', filter: `user_id=eq.${user.id}` },
+      async (payload) => {
+        const nextProfile = payload.new as Database['public']['Tables']['user_profiles']['Row'];
+        if (!isAccountActive(nextProfile)) {
+          setError(BLOCKED_ACCOUNT_MESSAGE);
+          setUser(null);
+          setAuthState('unauthenticated');
+          await supabase.auth.signOut();
+        }
+      }
+    );
+
+    channel.subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
 
   // Login with email/password
   const login = useCallback(async (email: string, password: string): Promise<{ success: boolean; message: string }> => {
@@ -254,6 +297,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           .select('*')
           .eq('user_id', data.user.id)
           .maybeSingle();
+
+        if (!isAccountActive(profile)) {
+          await supabase.auth.signOut();
+          setUser(null);
+          setAuthState('unauthenticated');
+          setError(BLOCKED_ACCOUNT_MESSAGE);
+          return { success: false, message: BLOCKED_ACCOUNT_MESSAGE };
+        }
 
         if (isProfileComplete(profile, data.user)) {
           setUser(profile ? mapSupabaseUser(profile, data.user.email) : mapAuthUser(data.user));

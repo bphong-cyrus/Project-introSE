@@ -176,22 +176,31 @@ export class CategoryRepository {
   /**
    * Delete (deactivate) a category
    */
-  async delete(categoryId: string): Promise<boolean> {
+  async delete(categoryId: string, userId?: string): Promise<boolean> {
     try {
-      const { error } = await supabase
+      let query = supabase
         .from('categories')
         .update({
           is_active: false,
           updated_at: new Date().toISOString(),
         })
-        .eq('category_id', categoryId);
+        .eq('category_id', categoryId)
+        .eq('is_default', false);
+
+      if (userId) {
+        query = query.eq('user_id', userId);
+      }
+
+      const { data, error } = await query
+        .select('category_id')
+        .maybeSingle();
 
       if (error) {
         console.error('CategoryRepository.delete error:', error);
         return false;
       }
 
-      return true;
+      return Boolean(data);
     } catch (error) {
       console.error('CategoryRepository.delete failed:', error);
       return false;

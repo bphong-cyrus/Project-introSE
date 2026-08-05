@@ -2,7 +2,7 @@
 // UC06 - Delete Category with cascade logic
 // Allows selecting which category to transfer transactions to
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -31,9 +31,26 @@ const DeleteCategoryDialog: React.FC<DeleteCategoryDialogProps> = ({
   onCancel,
   onConfirm,
 }) => {
-  const [selectedTargetId, setSelectedTargetId] = useState<string>(
-    availableCategories.length > 0 ? availableCategories[0].id : ''
+  const replacementCategories = useMemo(
+    () => availableCategories.filter(cat => cat.id !== categoryToDelete?.id),
+    [availableCategories, categoryToDelete?.id]
   );
+
+  const [selectedTargetId, setSelectedTargetId] = useState<string>(
+    replacementCategories.length > 0 ? replacementCategories[0].id : ''
+  );
+
+  useEffect(() => {
+    if (!visible) return;
+
+    setSelectedTargetId((current) => {
+      if (replacementCategories.some(cat => cat.id === current)) {
+        return current;
+      }
+
+      return replacementCategories[0]?.id || '';
+    });
+  }, [visible, replacementCategories]);
 
   if (!categoryToDelete) return null;
 
@@ -41,7 +58,7 @@ const DeleteCategoryDialog: React.FC<DeleteCategoryDialogProps> = ({
   const categoryTypeLabel = isIncome ? 'thu nhập' : 'hạn mức';
 
   const handleConfirm = () => {
-    if (selectedTargetId) {
+    if (selectedTargetId && selectedTargetId !== categoryToDelete.id) {
       onConfirm(selectedTargetId);
     }
   };
@@ -74,9 +91,8 @@ const DeleteCategoryDialog: React.FC<DeleteCategoryDialogProps> = ({
           <Text style={styles.selectionLabel}>Chọn danh mục thay thế:</Text>
 
           <ScrollView style={styles.categoryList} showsVerticalScrollIndicator={false}>
-            {availableCategories
-              .filter(cat => cat.id !== categoryToDelete.id)
-              .map((cat) => (
+            {replacementCategories.length > 0 ? (
+              replacementCategories.map((cat) => (
                 <TouchableOpacity
                   key={cat.id}
                   style={[
@@ -103,7 +119,12 @@ const DeleteCategoryDialog: React.FC<DeleteCategoryDialogProps> = ({
                     <Ionicons name="checkmark-circle" size={22} color={Colors.primary} />
                   )}
                 </TouchableOpacity>
-              ))}
+              ))
+            ) : (
+              <Text style={styles.emptyText}>
+                Không có danh mục thay thế phù hợp. Vui lòng tạo thêm một danh mục cùng loại trước khi xóa.
+              </Text>
+            )}
           </ScrollView>
 
           {/* Actions */}
@@ -210,6 +231,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     color: Colors.textPrimary,
+  },
+  emptyText: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    lineHeight: 18,
+    textAlign: 'center',
+    paddingVertical: 16,
   },
   actions: {
     flexDirection: 'row',

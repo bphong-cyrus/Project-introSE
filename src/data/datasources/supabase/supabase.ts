@@ -31,7 +31,8 @@ export interface Database {
           is_active: boolean;
           created_at: string;
           updated_at: string;
-          parent_category_id: string | null;
+          parent_id: string | null;
+          sort_order: number | null;
         };
         Insert: Omit<Database['public']['Tables']['categories']['Row'], 'category_id' | 'created_at' | 'updated_at'> & {
           category_id?: string;
@@ -93,11 +94,13 @@ export interface Database {
           budget_id: string;
           category_id: string;
           allocated_amount: number;
+          spent_amount: number;
           created_at: string;
           updated_at: string;
         };
-        Insert: Omit<Database['public']['Tables']['budget_category_allocations']['Row'], 'budget_category_allocation_id' | 'created_at' | 'updated_at'> & {
+        Insert: Omit<Database['public']['Tables']['budget_category_allocations']['Row'], 'budget_category_allocation_id' | 'created_at' | 'updated_at' | 'spent_amount'> & {
           budget_category_allocation_id?: string;
+          spent_amount?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -147,16 +150,286 @@ export interface Database {
           date_of_birth: string | null;
           job: string | null;
           initial_income: number | null;
-          currency_code: string;
+          currency_code: string | null;
           locale: string | null;
           time_zone: string | null;
           avatar_url: string | null;
           updated_at: string;
+          is_admin: boolean;
+          account_status: string;
         };
-        Insert: Omit<Database['public']['Tables']['user_profiles']['Row'], 'updated_at'> & {
+        Insert: Omit<Database['public']['Tables']['user_profiles']['Row'], 'updated_at' | 'is_admin' | 'account_status'> & {
           updated_at?: string;
+          is_admin?: boolean;
+          account_status?: string;
         };
         Update: Partial<Database['public']['Tables']['user_profiles']['Insert']>;
+      };
+      ocr_results: {
+        Row: {
+          receipt_id: string;
+          ocr_engine: string;
+          ocr_version: string | null;
+          extracted_fields: Record<string, unknown>;
+          raw_text: string | null;
+          processed_at: string;
+          confidence: number | null;
+        };
+        Insert: Database['public']['Tables']['ocr_results']['Row'];
+        Update: Partial<Database['public']['Tables']['ocr_results']['Insert']>;
+      };
+      recommendation_runs: {
+        Row: {
+          recommendation_run_id: string;
+          user_id: string;
+          budget_id: string;
+          model_name: string;
+          model_version: string | null;
+          input_snapshot: Record<string, unknown>;
+          status: string;
+          failure_reason: string | null;
+          started_at: string;
+          completed_at: string | null;
+        };
+        Insert: Omit<Database['public']['Tables']['recommendation_runs']['Row'], 'recommendation_run_id'> & {
+          recommendation_run_id?: string;
+        };
+        Update: Partial<Database['public']['Tables']['recommendation_runs']['Insert']>;
+      };
+      scan_logs: {
+        Row: {
+          scan_log_id: string;
+          user_id: string;
+          receipt_id: string | null;
+          ocr_result_id: string | null;
+          status: string;
+          extracted_amount: number | null;
+          extracted_merchant: string | null;
+          suggested_category_id: string | null;
+          final_category_id: string | null;
+          confidence_score: number | null;
+          error_code: string | null;
+          error_message: string | null;
+          is_reviewed: boolean;
+          created_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['scan_logs']['Row'], 'scan_log_id' | 'created_at'> & {
+          scan_log_id?: string;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['scan_logs']['Insert']>;
+      };
+      feedbacks: {
+        Row: {
+          feedback_id: string;
+          user_id: string;
+          category: string;
+          subject: string;
+          content: string;
+          attachment_url: string | null;
+          status: string;
+          admin_response: string | null;
+          responded_at: string | null;
+          responded_by: string | null;
+          created_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['feedbacks']['Row'], 'feedback_id' | 'created_at'> & {
+          feedback_id?: string;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['feedbacks']['Insert']>;
+      };
+      audit_logs: {
+        Row: {
+          audit_log_id: string;
+          admin_id: string;
+          action: string;
+          target_type: string | null;
+          target_id: string | null;
+          metadata: Record<string, unknown> | null;
+          created_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['audit_logs']['Row'], 'audit_log_id' | 'created_at'> & {
+          audit_log_id?: string;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['audit_logs']['Insert']>;
+      };
+      notifications: {
+        Row: {
+          notification_id: string;
+          user_id: string;
+          type: string;
+          title: string;
+          body: string | null;
+          data: Record<string, unknown> | null;
+          created_at: string;
+          read_at: string | null;
+          campaign_id: string | null;
+          is_read: boolean;
+          deleted_at: string | null;
+        };
+        Insert: Omit<Database['public']['Tables']['notifications']['Row'], 'notification_id' | 'created_at' | 'is_read' | 'deleted_at' | 'read_at'> & {
+          notification_id?: string;
+          created_at?: string;
+          is_read?: boolean;
+          deleted_at?: string | null;
+          read_at?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['notifications']['Insert']>;
+      };
+      notification_campaigns: {
+        Row: {
+          campaign_id: string;
+          title: string;
+          body: string;
+          target_audience: string;
+          status: string;
+          scheduled_at: string | null;
+          sent_at: string | null;
+          created_by: string;
+          created_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['notification_campaigns']['Row'], 'campaign_id' | 'created_at'> & {
+          campaign_id?: string;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['notification_campaigns']['Insert']>;
+      };
+      notification_campaign_targets: {
+        Row: {
+          campaign_id: string;
+          user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          campaign_id: string;
+          user_id: string;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['notification_campaign_targets']['Insert']>;
+      };
+      user_notification_settings: {
+        Row: {
+          user_id: string;
+          push_enabled: boolean;
+          daily_reminder_enabled: boolean;
+          reminder_frequency: 'everyday' | 'fixed_date';
+          reminder_time: string | null;
+          reminder_date: string | null;
+          expo_push_token: string | null;
+          updated_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['user_notification_settings']['Row'], 'updated_at'> & {
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['user_notification_settings']['Insert']>;
+      };
+      budget_warnings: {
+        Row: {
+          warning_id: string;
+          user_id: string;
+          budget_category_allocation_id: string | null;
+          triggered_by_transaction_id: string | null;
+          warning_type: string;
+          message: string | null;
+          is_read: boolean;
+          created_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['budget_warnings']['Row'], 'warning_id' | 'created_at'> & {
+          warning_id?: string;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['budget_warnings']['Insert']>;
+      };
+      push_tokens: {
+        Row: {
+          push_token_id: string;
+          user_id: string;
+          token: string;
+          device_type: string;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['push_tokens']['Row'], 'push_token_id' | 'created_at' | 'updated_at'> & {
+          push_token_id?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['push_tokens']['Insert']>;
+      };
+    };
+    Functions: {
+      get_admin_auth_users: {
+        Args: Record<string, never>;
+        Returns: {
+          uid: string;
+          display_name: string | null;
+          email: string | null;
+          phone: string | null;
+          providers: string[];
+          provider_type: string | null;
+          created_at: string;
+          last_sign_in_at: string | null;
+        }[];
+      };
+      admin_update_user_profile: {
+        Args: {
+          target_user_id: string;
+          profile_full_name: string;
+          profile_date_of_birth: string | null;
+          profile_job: string | null;
+          profile_initial_income: number | null;
+        };
+        Returns: Database['public']['Tables']['user_profiles']['Row'];
+      };
+      admin_update_user_account_status: {
+        Args: {
+          target_user_id: string;
+          new_status: 'active' | 'inactive';
+        };
+        Returns: Database['public']['Tables']['user_profiles']['Row'];
+      };
+      admin_create_notification_campaign: {
+        Args: {
+          campaign_title: string;
+          campaign_body: string;
+          campaign_audience: string;
+          scheduled_for: string | null;
+          target_user_ids: string[];
+        };
+        Returns: string;
+      };
+      admin_cancel_notification_campaign: {
+        Args: {
+          target_campaign_id: string;
+        };
+        Returns: Database['public']['Tables']['notification_campaigns']['Row'];
+      };
+      evaluate_user_budget_notifications: {
+        Args: Record<string, never>;
+        Returns: number;
+      };
+      ensure_user_monthly_budget: {
+        Args: {
+          target_year?: number | null;
+          target_month?: number | null;
+        };
+        Returns: string;
+      };
+      refresh_user_budget_spending: {
+        Args: {
+          target_year?: number | null;
+          target_month?: number | null;
+        };
+        Returns: string;
+      };
+      delete_user_transaction: {
+        Args: {
+          target_transaction_id: string;
+        };
+        Returns: boolean;
       };
     };
   };

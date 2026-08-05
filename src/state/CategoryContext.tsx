@@ -4,7 +4,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import { Category } from '../shared/types';
-import { categoryRepository } from '../data/repositories';
+import { categoryRepository, transactionRepository } from '../data/repositories';
 import { useAuth } from './AuthContext';
 
 // Default categories as fallback when DB is unavailable
@@ -28,7 +28,7 @@ interface CategoryContextValue {
   allCategories: Category[];
   isLoading: boolean;
   addCategory: (category: Omit<Category, 'id'>) => Promise<Category | null>;
-  deleteCategory: (id: string) => Promise<boolean>;
+  deleteCategory: (id: string, targetCategoryId?: string) => Promise<boolean>;
   getCategoriesByType: (type: 'income' | 'expense') => Category[];
   refreshCategories: () => Promise<void>;
 }
@@ -53,13 +53,8 @@ export const CategoryProvider: React.FC<{ children: ReactNode }> = ({ children }
         categoryRepository.getIncomeCategories(currentUserId),
       ]);
 
-      // Only update if we got real data from DB
-      if (expense.length > 0) {
-        setExpenseCats(expense);
-      }
-      if (income.length > 0) {
-        setIncomeCats(income);
-      }
+      setExpenseCats(expense.length > 0 ? expense : defaultExpenseCategories);
+      setIncomeCats(income.length > 0 ? income : defaultIncomeCategories);
     } catch (error) {
       console.error('Failed to load categories:', error);
       // Fall back to defaults
@@ -71,11 +66,20 @@ export const CategoryProvider: React.FC<{ children: ReactNode }> = ({ children }
   useEffect(() => {
     if (currentUserId) {
       refreshCategories();
+    } else {
+      setExpenseCats(defaultExpenseCategories);
+      setIncomeCats(defaultIncomeCategories);
+      setIsLoading(false);
     }
   }, [currentUserId, refreshCategories]);
 
   const addCategory = useCallback(async (categoryData: Omit<Category, 'id'>): Promise<Category | null> => {
     try {
+      if (!currentUserId) {
+        console.error('Failed to add category: user is not authenticated');
+        return null;
+      }
+
       const newCategory = await categoryRepository.create(
         currentUserId,
         categoryData.name,
@@ -93,26 +97,34 @@ export const CategoryProvider: React.FC<{ children: ReactNode }> = ({ children }
         return newCategory;
       }
 
-      // Fallback to local state if DB fails
-      const localCategory: Category = {
-        ...categoryData,
-        id: `${categoryData.type === 'expense' ? 'exp' : 'inc'}-cat-${Date.now()}`,
-      };
-      if (categoryData.type === 'expense') {
-        setExpenseCats(prev => [...prev, localCategory]);
-      } else {
-        setIncomeCats(prev => [...prev, localCategory]);
-      }
-      return localCategory;
+      return null;
     } catch (error) {
       console.error('Failed to add category:', error);
       return null;
     }
   }, [currentUserId]);
 
-  const deleteCategory = useCallback(async (id: string): Promise<boolean> => {
+  const deleteCategory = useCallback(async (id: string, targetCategoryId?: string): Promise<boolean> => {
     try {
-      const success = await categoryRepository.delete(id);
+      if (!currentUserId) {
+        console.error('Failed to delete category: user is not authenticated');
+        return false;
+      }
+
+      if (targetCategoryId && targetCategoryId !== id) {
+        const transferSuccess = await transactionRepository.transferCategory(
+          currentUserId,
+          id,
+          targetCategoryId
+        );
+
+        if (!transferSuccess) {
+          console.error('Failed to delete category: transaction transfer failed');
+          return false;
+        }
+      }
+
+      const success = await categoryRepository.delete(id, currentUserId);
       if (success) {
         setExpenseCats(prev => prev.filter(c => c.id !== id));
         setIncomeCats(prev => prev.filter(c => c.id !== id));
@@ -120,12 +132,9 @@ export const CategoryProvider: React.FC<{ children: ReactNode }> = ({ children }
       return success;
     } catch (error) {
       console.error('Failed to delete category:', error);
-      // Still remove locally
-      setExpenseCats(prev => prev.filter(c => c.id !== id));
-      setIncomeCats(prev => prev.filter(c => c.id !== id));
-      return true;
+      return false;
     }
-  }, []);
+  }, [currentUserId]);
 
   const getCategoriesByType = useCallback((type: 'income' | 'expense') => {
     return type === 'expense' ? expenseCats : incomeCats;

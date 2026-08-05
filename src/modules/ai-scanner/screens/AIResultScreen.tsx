@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   TextInput,
   Platform,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
@@ -108,7 +109,7 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
   }, []);
 
   // Handle save
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     setTransactionNameError('');
     setAmountError('');
 
@@ -139,24 +140,28 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
     finalDate.setHours(hours);
     finalDate.setMinutes(minutes);
 
-    // Add transaction
-    addTransaction({
-      userId: 'user-1',
-      name: trimmedTransactionName,
-      amount: numericAmount,
-      type: transactionType,
-      categoryId: selectedCategory.id,
-      category: selectedCategory,
-      date: finalDate,
-      note: note.trim() || undefined,
-      imageUrl: data.imageUri,
-    });
+    try {
+      await addTransaction({
+        userId: '',
+        name: trimmedTransactionName,
+        amount: numericAmount,
+        type: transactionType,
+        categoryId: selectedCategory.id,
+        category: selectedCategory,
+        date: finalDate,
+        note: note.trim() || undefined,
+        imageUrl: data.imageUri,
+        source: 'ocr',
+      });
 
-    setShowSuccess(true);
-    setTimeout(() => {
-      onSaved();
-    }, 1500);
-  }, [amount, transactionName, storeName, selectedCategory, date, timeString, note, transactionType, addTransaction, onSaved]);
+      setShowSuccess(true);
+      setTimeout(() => {
+        onSaved();
+      }, 1500);
+    } catch (error: any) {
+      Alert.alert('Không thể lưu giao dịch', error?.message || 'Vui lòng thử lại sau.');
+    }
+  }, [amount, transactionName, storeName, selectedCategory, date, timeString, note, transactionType, data.imageUri, addTransaction, onSaved]);
 
   // Success overlay
   if (showSuccess) {

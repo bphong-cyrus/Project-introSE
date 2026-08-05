@@ -23,6 +23,7 @@ export class TransactionRepository {
       note: row.note || undefined,
       date: new Date(row.transaction_date),
       imageUrl: row.receipt_id || undefined,
+      source: row.source || undefined,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
     };
@@ -137,7 +138,7 @@ export class TransactionRepository {
   /**
    * Create a new transaction
    */
-  async create(transaction: Omit<Transaction, 'id' | 'imageUrl' | 'createdAt' | 'updatedAt'>): Promise<Transaction | null> {
+  async create(transaction: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>): Promise<Transaction | null> {
     try {
       const { data, error } = await supabase
         .from('transactions')
@@ -156,7 +157,7 @@ export class TransactionRepository {
             ? transaction.date.toISOString().split('T')[0]
             : transaction.date,
           payment_method: null,
-          source: 'manual',
+          source: transaction.source || (transaction.imageUrl ? 'ocr' : 'manual'),
         })
         .select()
         .single();
@@ -220,19 +221,66 @@ export class TransactionRepository {
    */
   async delete(transactionId: string): Promise<boolean> {
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('transactions')
         .delete()
-        .eq('transaction_id', transactionId);
+        .eq('transaction_id', transactionId)
+        .select('transaction_id')
+        .maybeSingle();
 
       if (error) {
         console.error('TransactionRepository.delete error:', error);
+      } else if (data?.transaction_id) {
+        return true;
+      }
+
+      const { error: rpcError } = await supabase.rpc('delete_user_transaction', {
+        target_transaction_id: transactionId,
+      });
+
+      if (rpcError) {
+        console.error('TransactionRepository.delete RPC error:', rpcError);
         return false;
       }
 
       return true;
     } catch (error) {
       console.error('TransactionRepository.delete failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Transfer all transactions from one category to another.
+   * Used before soft-deleting a custom category.
+   */
+  async transferCategory(
+    userId: string,
+    fromCategoryId: string,
+    toCategoryId: string
+  ): Promise<boolean> {
+    if (!userId || !fromCategoryId || !toCategoryId || fromCategoryId === toCategoryId) {
+      return false;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('transactions')
+        .update({
+          category_id: toCategoryId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', userId)
+        .eq('category_id', fromCategoryId);
+
+      if (error) {
+        console.error('TransactionRepository.transferCategory error:', error);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('TransactionRepository.transferCategory failed:', error);
       return false;
     }
   }
