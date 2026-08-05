@@ -40,6 +40,7 @@ export interface Transaction {
   date: Date;
   note?: string;
   imageUrl?: string;    // For AI-scanned receipts
+  source?: 'manual' | 'ocr' | string;
   createdAt: Date;
   updatedAt: Date;
 }

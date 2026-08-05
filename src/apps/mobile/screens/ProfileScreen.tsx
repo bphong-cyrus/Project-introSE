@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../../shared/constants/colors';
 import { useAuth } from '../../../state/AuthContext';
+import { useNotifications } from '../../../state/NotificationContext';
 import { supabase } from '../../../data/datasources/supabase/supabase';
 
 type EditableProfile = {
@@ -30,12 +31,21 @@ type EditableProfile = {
 
 const ProfileScreen: React.FC = () => {
   const { user, logout, updateProfile, isLoading } = useAuth();
+  const { settings, updateSettings } = useNotifications();
   const displayName = user?.fullName?.trim() || 'Người dùng';
   const avatarLetter = displayName.charAt(0).toUpperCase();
   const [showAvatarSheet, setShowAvatarSheet] = useState(false);
   const [showAvatarLightbox, setShowAvatarLightbox] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showNotificationSettings, setShowNotificationSettings] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [notificationForm, setNotificationForm] = useState({
+    pushEnabled: true,
+    dailyReminderEnabled: false,
+    reminderFrequency: 'everyday' as 'everyday' | 'fixed_date',
+    reminderTime: '21:00',
+    reminderDate: '',
+  });
   const [form, setForm] = useState<EditableProfile>({
     fullName: '',
     dateOfBirth: '',
@@ -51,6 +61,17 @@ const ProfileScreen: React.FC = () => {
       income: user?.income ? String(user.income) : '',
     });
   }, [user]);
+
+  useEffect(() => {
+    if (!settings) return;
+    setNotificationForm({
+      pushEnabled: settings.push_enabled,
+      dailyReminderEnabled: settings.daily_reminder_enabled,
+      reminderFrequency: settings.reminder_frequency,
+      reminderTime: settings.reminder_time || '21:00',
+      reminderDate: settings.reminder_date ? settings.reminder_date.slice(0, 16) : '',
+    });
+  }, [settings]);
 
   const formatCurrency = (value?: number): string => {
     if (!value) return 'Chưa cập nhật';
@@ -217,6 +238,43 @@ const ProfileScreen: React.FC = () => {
     );
   };
 
+  const handleSaveNotificationSettings = async () => {
+    const isFixedReminder = notificationForm.reminderFrequency === 'fixed_date';
+    let reminderDate: string | null = null;
+    let reminderTime = notificationForm.reminderTime || '21:00';
+
+    if (notificationForm.dailyReminderEnabled && isFixedReminder) {
+      if (!notificationForm.reminderDate) {
+        Alert.alert('Thiếu ngày nhắc nhở', 'Vui lòng nhập ngày giờ nhắc nhở một lần.');
+        return;
+      }
+
+      const parsedReminderDate = new Date(notificationForm.reminderDate);
+      if (Number.isNaN(parsedReminderDate.getTime())) {
+        Alert.alert('Ngày giờ không hợp lệ', 'Vui lòng nhập ngày giờ theo định dạng YYYY-MM-DDTHH:mm.');
+        return;
+      }
+
+      reminderDate = parsedReminderDate.toISOString();
+      reminderTime = `${String(parsedReminderDate.getHours()).padStart(2, '0')}:${String(parsedReminderDate.getMinutes()).padStart(2, '0')}`;
+    }
+
+    const result = await updateSettings({
+      pushEnabled: notificationForm.pushEnabled,
+      dailyReminderEnabled: notificationForm.dailyReminderEnabled,
+      reminderFrequency: notificationForm.reminderFrequency,
+      reminderTime,
+      reminderDate,
+    });
+
+    if (result.success) {
+      setShowNotificationSettings(false);
+      Alert.alert('Thành công', result.message);
+    } else {
+      Alert.alert('Lỗi', result.message);
+    }
+  };
+
   const navigatePlaceholder = (title: string) => {
     Alert.alert(title, 'Màn hình này đã được chuẩn bị route placeholder và sẽ được tích hợp ở bước tiếp theo.');
   };
@@ -293,14 +351,18 @@ const ProfileScreen: React.FC = () => {
 
         <Text style={styles.sectionLabel}>Cài đặt ứng dụng</Text>
         <View style={styles.menuGroup}>
-          <TouchableOpacity style={styles.menuItem} onPress={() => navigatePlaceholder('Nhắc nhở thông báo')}>
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              setNotificationForm(prev => ({ ...prev, dailyReminderEnabled: true }));
+              setShowNotificationSettings(true);
+            }}
+          >
             <View style={styles.menuLeft}>
               <Ionicons name="notifications" size={18} color={Colors.primary} />
-              <Text style={styles.menuText}>Nhắc nhở ghi sổ</Text>
+              <Text style={styles.menuText}>Nhắc nhở nhập liệu hàng ngày</Text>
             </View>
-            <View style={styles.switchMock}>
-              <View style={styles.switchDot} />
-            </View>
+            <Ionicons name="chevron-forward" size={20} color={Colors.primary} />
           </TouchableOpacity>
         </View>
 
@@ -350,6 +412,74 @@ const ProfileScreen: React.FC = () => {
           </TouchableOpacity>
           {user?.avatar && <Image source={{ uri: user.avatar }} style={styles.lightboxImage} resizeMode="contain" />}
         </TouchableOpacity>
+      </Modal>
+
+      <Modal visible={showNotificationSettings} transparent animationType="slide" onRequestClose={() => setShowNotificationSettings(false)}>
+        <View style={styles.editBackdrop}>
+          <View style={styles.editModal}>
+            <View style={styles.editHeader}>
+              <Text style={styles.editTitle}>Cài đặt thông báo</Text>
+              <TouchableOpacity onPress={() => setShowNotificationSettings(false)}>
+                <Ionicons name="close" size={24} color={Colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={styles.settingRow}
+              onPress={() => setNotificationForm(prev => ({ ...prev, pushEnabled: !prev.pushEnabled }))}
+            >
+              <View>
+                <Text style={styles.settingTitle}>Thông báo đẩy thiết bị</Text>
+                <Text style={styles.settingDescription}>Tắt mục này vẫn lưu thông báo trong ứng dụng.</Text>
+              </View>
+              <View style={[styles.switchMock, notificationForm.pushEnabled && styles.switchOn]}>
+                <View style={[styles.switchDot, notificationForm.pushEnabled && styles.switchDotOn]} />
+              </View>
+            </TouchableOpacity>
+
+            <Text style={styles.inputLabel}>Tần suất</Text>
+            <View style={styles.frequencyRow}>
+              <TouchableOpacity
+                style={[styles.frequencyButton, notificationForm.reminderFrequency === 'everyday' && styles.frequencyButtonActive]}
+                onPress={() => setNotificationForm(prev => ({ ...prev, dailyReminderEnabled: true, reminderFrequency: 'everyday' }))}
+              >
+                <Text style={[styles.frequencyText, notificationForm.reminderFrequency === 'everyday' && styles.frequencyTextActive]}>Hằng ngày</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.frequencyButton, notificationForm.reminderFrequency === 'fixed_date' && styles.frequencyButtonActive]}
+                onPress={() => setNotificationForm(prev => ({ ...prev, dailyReminderEnabled: true, reminderFrequency: 'fixed_date' }))}
+              >
+                <Text style={[styles.frequencyText, notificationForm.reminderFrequency === 'fixed_date' && styles.frequencyTextActive]}>Một lần</Text>
+              </TouchableOpacity>
+            </View>
+
+            {notificationForm.reminderFrequency === 'everyday' ? (
+              <>
+                <Text style={styles.inputLabel}>Giờ nhắc hằng ngày (HH:mm)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={notificationForm.reminderTime}
+                  onChangeText={(reminderTime) => setNotificationForm(prev => ({ ...prev, dailyReminderEnabled: true, reminderTime }))}
+                  placeholder="21:00"
+                />
+              </>
+            ) : (
+              <>
+                <Text style={styles.inputLabel}>Ngày giờ nhắc một lần</Text>
+                <TextInput
+                  style={styles.input}
+                  value={notificationForm.reminderDate}
+                  onChangeText={(reminderDate) => setNotificationForm(prev => ({ ...prev, dailyReminderEnabled: true, reminderDate }))}
+                  placeholder="2026-08-04T21:00"
+                />
+              </>
+            )}
+
+            <TouchableOpacity style={styles.saveButton} onPress={handleSaveNotificationSettings}>
+              <Text style={styles.saveButtonText}>Lưu cài đặt</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
 
       <Modal visible={showEditModal} transparent animationType="slide" onRequestClose={() => setShowEditModal(false)}>
@@ -498,15 +628,22 @@ const styles = StyleSheet.create({
     width: 32,
     height: 18,
     borderRadius: 9,
-    backgroundColor: Colors.primary,
-    alignItems: 'flex-end',
+    backgroundColor: '#CBD5E1',
+    alignItems: 'flex-start',
     justifyContent: 'center',
     paddingHorizontal: 3,
+  },
+  switchOn: {
+    backgroundColor: Colors.primary,
+    alignItems: 'flex-end',
   },
   switchDot: {
     width: 12,
     height: 12,
     borderRadius: 6,
+    backgroundColor: '#FFFFFF',
+  },
+  switchDotOn: {
     backgroundColor: '#FFFFFF',
   },
   logoutButton: {
@@ -594,6 +731,52 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: Colors.textPrimary,
+  },
+  settingRow: {
+    minHeight: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  settingTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  settingDescription: {
+    marginTop: 3,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    maxWidth: 260,
+  },
+  frequencyRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  frequencyButton: {
+    flex: 1,
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  frequencyButtonActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  frequencyText: {
+    color: Colors.textSecondary,
+    fontWeight: '700',
+  },
+  frequencyTextActive: {
+    color: '#FFFFFF',
   },
   inputLabel: {
     fontSize: 12,

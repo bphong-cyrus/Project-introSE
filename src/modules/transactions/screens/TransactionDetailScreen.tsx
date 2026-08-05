@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   Alert,
   Animated,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
@@ -52,7 +53,26 @@ const TransactionDetailScreen: React.FC<TransactionDetailScreenProps> = ({
   const categoryIcon = toIoniconName(transaction?.category?.icon, transaction?.category?.name, 'wallet');
   const categoryName = transaction?.category?.name || 'Không phân loại';
 
+  const performDelete = useCallback(async () => {
+    setIsDeleting(true);
+    try {
+      await deleteTransaction(transactionId);
+      onDeleted();
+    } catch (error) {
+      Alert.alert('Lỗi', 'Không thể xóa giao dịch. Vui lòng thử lại.');
+      setIsDeleting(false);
+    }
+  }, [transactionId, deleteTransaction, onDeleted]);
+
   const handleDelete = useCallback(() => {
+    if (Platform.OS === 'web') {
+      const confirmed = (globalThis as any).confirm?.('Bạn có chắc chắn muốn xóa giao dịch này? Hành động này không thể hoàn tác.') ?? true;
+      if (confirmed) {
+        performDelete();
+      }
+      return;
+    }
+
     Alert.alert(
       'Xóa giao dịch',
       'Bạn có chắc chắn muốn xóa giao dịch này? Hành động này không thể hoàn tác.',
@@ -61,20 +81,11 @@ const TransactionDetailScreen: React.FC<TransactionDetailScreenProps> = ({
         {
           text: 'Xóa',
           style: 'destructive',
-          onPress: async () => {
-            setIsDeleting(true);
-            try {
-              await deleteTransaction(transactionId);
-              onDeleted();
-            } catch (error) {
-              Alert.alert('Lỗi', 'Không thể xóa giao dịch. Vui lòng thử lại.');
-              setIsDeleting(false);
-            }
-          },
+          onPress: performDelete,
         },
       ]
     );
-  }, [transactionId, deleteTransaction, onDeleted]);
+  }, [performDelete]);
 
   if (!transaction) {
     return (

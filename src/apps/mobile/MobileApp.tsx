@@ -13,6 +13,7 @@ import { Colors } from '../../shared/constants/colors';
 import { AuthProvider, useAuth } from '../../state/AuthContext';
 import { TransactionProvider } from '../../state/TransactionContext';
 import { CategoryProvider } from '../../state/CategoryContext';
+import { NotificationProvider } from '../../state/NotificationContext';
 
 // Auth Screens
 import {
@@ -26,7 +27,7 @@ import {
 } from './screens';
 
 // Main App Screens & Components
-import { HomeScreen, ProfileScreen, BudgetScreen } from './screens';
+import { HomeScreen, ProfileScreen, BudgetScreen, NotificationCenterScreen } from './screens';
 import { BottomTabBar } from './components';
 import { BOTTOM_TAB_BAR_HEIGHT } from './navigation/BottomTabBar';
 import { AddTransactionScreen } from '../../modules/transactions';
@@ -58,6 +59,7 @@ const AppContent: React.FC = () => {
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [selectedHistoryDate, setSelectedHistoryDate] = useState<Date | null>(null);
+  const [showNotificationCenter, setShowNotificationCenter] = useState(false);
 
   useEffect(() => {
     if (authState === 'authenticated') {
@@ -68,6 +70,7 @@ const AppContent: React.FC = () => {
       setSelectedTransactionId(null);
       setSelectedTransaction(null);
       setSelectedHistoryDate(null);
+      setShowNotificationCenter(false);
     }
   }, [authState]);
 
@@ -109,6 +112,7 @@ const AppContent: React.FC = () => {
 
   // Tab navigation handlers (same as before)
   const handleTabPress = (tab: TabName) => {
+    setShowNotificationCenter(false);
     setActiveTab(tab);
     setAddFlowScreen('main');
     if (tab !== 'Transactions') {
@@ -259,6 +263,10 @@ const AppContent: React.FC = () => {
 
   // Render main app content
   const renderMainContent = () => {
+    if (showNotificationCenter) {
+      return <NotificationCenterScreen onBack={() => setShowNotificationCenter(false)} />;
+    }
+
     // Transaction History content
     const renderTransactionsContent = () => {
       if (historyScreen === 'edit' && selectedTransaction) {
@@ -325,7 +333,13 @@ const AppContent: React.FC = () => {
 
     switch (activeTab) {
       case 'Home':
-        return <HomeScreen onTabChange={handleTabPress} onDateSelect={handleHomeDateSelect} />;
+        return (
+          <HomeScreen
+            onTabChange={handleTabPress}
+            onDateSelect={handleHomeDateSelect}
+            onNotificationsPress={() => setShowNotificationCenter(true)}
+          />
+        );
       case 'Transactions':
         return renderTransactionsContent();
       case 'Budget':
@@ -333,7 +347,13 @@ const AppContent: React.FC = () => {
       case 'Profile':
         return <ProfileScreen />;
       default:
-        return <HomeScreen onTabChange={handleTabPress} onDateSelect={handleHomeDateSelect} />;
+        return (
+          <HomeScreen
+            onTabChange={handleTabPress}
+            onDateSelect={handleHomeDateSelect}
+            onNotificationsPress={() => setShowNotificationCenter(true)}
+          />
+        );
     }
   };
 
@@ -389,7 +409,9 @@ export default function App() {
       <AuthProvider>
         <CategoryProvider>
           <TransactionProvider>
-            <AppContent />
+            <NotificationProvider>
+              <AppContent />
+            </NotificationProvider>
           </TransactionProvider>
         </CategoryProvider>
       </AuthProvider>

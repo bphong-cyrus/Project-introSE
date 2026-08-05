@@ -12,11 +12,11 @@ import {
   TouchableOpacity,
   RefreshControl,
   Modal,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
 import { Category, CategoryBudget } from '../../../shared/types';
-import { expenseCategories, incomeCategories, userTransactions } from '../../../data/datasources/mock/userMockData';
 import { useTransactions } from '../../../state/TransactionContext';
 import { useCategories } from '../../../state/CategoryContext';
 import RadialGauge from '../components/RadialGauge';
@@ -26,6 +26,8 @@ import IncomeCategoryCard from '../components/IncomeCategoryCard';
 import BudgetWarningBanner from '../components/BudgetWarningBanner';
 import { DeleteCategoryDialog, TransactionHistoryScreen, AddCategorySheet, AddIncomeCategorySheet } from '../../categories';
 import CategoryEditScreen from './CategoryEditScreen';
+import { useAuth } from '../../../state/AuthContext';
+import { supabase } from '../../../data/datasources/supabase/supabase';
 
 const VIETNAMESE_MONTHS = [
   'Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6',
@@ -36,8 +38,15 @@ const MONTHS_SHORT = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10
 
 const BudgetScreen: React.FC = () => {
   // Use global contexts for shared state
-  const { transactions } = useTransactions();
-  const { expenseCategories: ctxExpenseCats, incomeCategories: ctxIncomeCats } = useCategories();
+  const { user } = useAuth();
+  const { transactions, refreshTransactions } = useTransactions();
+  const {
+    expenseCategories: ctxExpenseCats,
+    incomeCategories: ctxIncomeCats,
+    addCategory,
+    deleteCategory,
+    refreshCategories,
+  } = useCategories();
 
   const [refreshing, setRefreshing] = useState(false);
   const [showAddExpenseSheet, setShowAddExpenseSheet] = useState(false);
@@ -56,16 +65,10 @@ const BudgetScreen: React.FC = () => {
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
 
   // User's total monthly income/budget
-  const [totalIncome, setTotalIncome] = useState(5000000);
+  const [totalIncome, setTotalIncome] = useState(100000000);
 
   // Budget limits per expense category
-  const [expenseBudgetLimits, setExpenseBudgetLimits] = useState<{ [key: string]: number }>({
-    'exp-cat-1': 2000000,
-    'exp-cat-2': 1000000,
-    'exp-cat-3': 1500000,
-    'exp-cat-4': 500000,
-    'exp-cat-5': 500000,
-  });
+  const [expenseBudgetLimits, setExpenseBudgetLimits] = useState<{ [key: string]: number }>({});
 
   // Categories state (synced with global context)
   const [expenseCats, setExpenseCats] = useState<Category[]>(ctxExpenseCats);
@@ -79,6 +82,114 @@ const BudgetScreen: React.FC = () => {
   React.useEffect(() => {
     setIncomeCats(ctxIncomeCats);
   }, [ctxIncomeCats]);
+
+  const ensureMonthlyBudget = useCallback(async () => {
+    if (!user?.id) return null;
+
+    const month = selectedMonth + 1;
+
+    const { data: ensuredBudgetId, error: ensureError } = await supabase.rpc('refresh_user_budget_spending', {
+      target_year: selectedYear,
+      target_month: month,
+    });
+
+    if (ensureError) throw ensureError;
+    if (!ensuredBudgetId) return null;
+
+    const { data, error } = await supabase
+      .from('budgets')
+      .update({
+        expected_income_amount: totalIncome,
+        expected_income_currency_code: 'VND',
+        income_frequency: 'monthly',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('budget_id', ensuredBudgetId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  }, [selectedMonth, selectedYear, totalIncome, user?.id]);
+
+  const evaluateBudgetNotifications = useCallback(async () => {
+    const { error } = await supabase.rpc('evaluate_user_budget_notifications');
+    if (error) {
+      console.warn('Không thể kiểm tra cảnh báo ngân sách:', error.message);
+    }
+  }, []);
+
+  const syncBudgetAllocationsFromDatabase = useCallback(async () => {
+    if (!user?.id || expenseCats.length === 0) return;
+
+    try {
+      const budget = await ensureMonthlyBudget();
+      if (!budget) return;
+
+      const { data: allocations, error: allocationError } = await supabase
+        .from('budget_category_allocations')
+        .select('*')
+        .eq('budget_id', budget.budget_id);
+
+      if (allocationError) throw allocationError;
+
+      const allocationsByCategory = new Map((allocations ?? []).map((allocation) => [allocation.category_id, allocation]));
+      const nextLimits: { [key: string]: number } = {};
+
+      for (const category of expenseCats) {
+        const existingAllocation = allocationsByCategory.get(category.id);
+        nextLimits[category.id] = existingAllocation
+          ? Number(existingAllocation.allocated_amount)
+          : 0;
+      }
+
+      setExpenseBudgetLimits((prev) => {
+        const prevSerialized = JSON.stringify(prev);
+        const nextSerialized = JSON.stringify(nextLimits);
+        return prevSerialized === nextSerialized ? prev : nextLimits;
+      });
+    } catch (error) {
+      console.warn('Không thể đồng bộ hạn mức ngân sách:', error);
+    }
+  }, [ensureMonthlyBudget, expenseCats, user?.id]);
+
+  React.useEffect(() => {
+    syncBudgetAllocationsFromDatabase();
+  }, [syncBudgetAllocationsFromDatabase]);
+
+  const saveCategoryBudgetToDatabase = useCallback(async (categoryId: string, newLimit: number, fallbackTotal?: number) => {
+    if (!user?.id) return;
+
+    const nextLimits = { ...expenseBudgetLimits, [categoryId]: newLimit };
+    const budget = await ensureMonthlyBudget();
+    if (!budget) return;
+
+    const { error: allocationError } = await supabase
+      .from('budget_category_allocations')
+      .upsert(
+        {
+          budget_id: budget.budget_id,
+          category_id: categoryId,
+          allocated_amount: newLimit,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'budget_id,category_id' }
+      );
+
+    if (allocationError) throw allocationError;
+
+    const nextTotal = fallbackTotal ?? expenseCats.reduce((sum, category) => sum + (nextLimits[category.id] ?? 0), 0);
+    const { error: budgetUpdateError } = await supabase
+      .from('budgets')
+      .update({
+        total_budget_amount: nextTotal,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('budget_id', budget.budget_id);
+
+    if (budgetUpdateError) throw budgetUpdateError;
+    await evaluateBudgetNotifications();
+  }, [ensureMonthlyBudget, evaluateBudgetNotifications, expenseBudgetLimits, expenseCats, user?.id]);
 
   // Note: transactions from useTransactions() context is used for category calculations
 
@@ -96,7 +207,7 @@ const BudgetScreen: React.FC = () => {
       });
 
       const spent = categoryTransactions.reduce((sum, txn) => sum + txn.amount, 0);
-      const budgetLimit = expenseBudgetLimits[category.id] || 1000000;
+      const budgetLimit = expenseBudgetLimits[category.id] ?? 0;
 
       return {
         category,
@@ -147,41 +258,59 @@ const BudgetScreen: React.FC = () => {
     setShowMonthPicker(false);
   };
 
-  const onRefresh = useCallback(() => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    setTimeout(() => {
-      setExpenseCats([...expenseCategories]);
-      setIncomeCats([...incomeCategories]);
+    try {
+      await Promise.all([
+        refreshCategories(),
+        refreshTransactions(),
+        syncBudgetAllocationsFromDatabase(),
+      ]);
+    } catch (error) {
+      console.error('Failed to refresh categories:', error);
+      Alert.alert('Lỗi', 'Không thể tải lại danh mục.');
+    } finally {
       setRefreshing(false);
-    }, 1000);
-  }, []);
+    }
+  }, [refreshCategories, refreshTransactions, syncBudgetAllocationsFromDatabase]);
 
   // Add expense category
-  const handleAddExpenseCategory = (categoryData: { name: string; color: string; icon: string }) => {
-    const newCategory: Category = {
-      id: `exp-cat-${Date.now()}`,
+  const handleAddExpenseCategory = async (categoryData: { name: string; color: string; icon: string }) => {
+    const newCategory = await addCategory({
       name: categoryData.name,
       icon: categoryData.icon,
       color: categoryData.color,
       type: 'expense',
       isDefault: false,
-    };
-    setExpenseCats([...expenseCats, newCategory]);
-    setExpenseBudgetLimits(prev => ({ ...prev, [newCategory.id]: 1000000 }));
+    });
+
+    if (!newCategory) {
+      Alert.alert('Không thể tạo danh mục', 'Danh mục chưa được lưu vào cơ sở dữ liệu. Vui lòng thử lại.');
+      return;
+    }
+
+    setExpenseBudgetLimits(prev => ({ ...prev, [newCategory.id]: 0 }));
+    saveCategoryBudgetToDatabase(newCategory.id, 0, totalBudgetLimit).catch((error) => {
+      console.warn('Không thể lưu hạn mức danh mục mới:', error);
+    });
     setShowAddExpenseSheet(false);
   };
 
   // Add income category
-  const handleAddIncomeCategory = (categoryData: { name: string; color: string; icon: string }) => {
-    const newCategory: Category = {
-      id: `inc-cat-${Date.now()}`,
+  const handleAddIncomeCategory = async (categoryData: { name: string; color: string; icon: string }) => {
+    const newCategory = await addCategory({
       name: categoryData.name,
       icon: categoryData.icon,
       color: categoryData.color,
       type: 'income',
       isDefault: false,
-    };
-    setIncomeCats([...incomeCats, newCategory]);
+    });
+
+    if (!newCategory) {
+      Alert.alert('Không thể tạo danh mục', 'Danh mục chưa được lưu vào cơ sở dữ liệu. Vui lòng thử lại.');
+      return;
+    }
+
     setShowAddIncomeSheet(false);
   };
 
@@ -191,25 +320,45 @@ const BudgetScreen: React.FC = () => {
   };
 
   // Confirm delete with transfer to target category
-  const confirmDeleteWithTransfer = (targetCategoryId: string) => {
-    if (categoryToDelete) {
-      // Note: Transactions are managed via context, transfer happens automatically
-      // when categories are removed. For mock state, we just remove the category.
-
-      // Delete the category
-      if (categoryToDelete.type === 'expense') {
-        setExpenseCats(expenseCats.filter((c) => c.id !== categoryToDelete.id));
-        setExpenseBudgetLimits(prev => {
-          const newLimits = { ...prev };
-          delete newLimits[categoryToDelete.id];
-          return newLimits;
-        });
-      } else {
-        setIncomeCats(incomeCats.filter((c) => c.id !== categoryToDelete.id));
-      }
-      setShowDeleteDialog(false);
-      setCategoryToDelete(null);
+  const confirmDeleteWithTransfer = async (targetCategoryId: string) => {
+    if (!categoryToDelete) {
+      return;
     }
+
+    if (!targetCategoryId || targetCategoryId === categoryToDelete.id) {
+      Alert.alert('Không thể xóa danh mục', 'Vui lòng chọn một danh mục thay thế hợp lệ.');
+      return;
+    }
+
+    const targetCategory = (categoryToDelete.type === 'expense' ? expenseCats : incomeCats)
+      .find((category) => category.id === targetCategoryId);
+
+    if (!targetCategory) {
+      Alert.alert('Không thể xóa danh mục', 'Danh mục thay thế không tồn tại hoặc đã bị xóa.');
+      return;
+    }
+
+    const success = await deleteCategory(categoryToDelete.id, targetCategoryId);
+
+    if (!success) {
+      Alert.alert(
+        'Không thể xóa danh mục',
+        'Chưa thể chuyển giao giao dịch hoặc cập nhật cơ sở dữ liệu. Vui lòng thử lại.'
+      );
+      return;
+    }
+
+    if (categoryToDelete.type === 'expense') {
+      setExpenseBudgetLimits(prev => {
+        const newLimits = { ...prev };
+        delete newLimits[categoryToDelete.id];
+        return newLimits;
+      });
+    }
+
+    await Promise.all([refreshCategories(), refreshTransactions()]);
+    setShowDeleteDialog(false);
+    setCategoryToDelete(null);
   };
 
   const handleEditCategoryBudget = (categoryBudget: CategoryBudget) => {
@@ -222,8 +371,14 @@ const BudgetScreen: React.FC = () => {
     setShowTransactionHistory(true);
   };
 
-  const handleSaveCategoryBudget = (categoryId: string, newLimit: number) => {
+  const handleSaveCategoryBudget = async (categoryId: string, newLimit: number) => {
     setExpenseBudgetLimits(prev => ({ ...prev, [categoryId]: newLimit }));
+    try {
+      await saveCategoryBudgetToDatabase(categoryId, newLimit);
+    } catch (error) {
+      console.warn('Không thể lưu hạn mức danh mục:', error);
+      Alert.alert('Lỗi', 'Hạn mức đã cập nhật tạm thời nhưng chưa lưu được vào cơ sở dữ liệu.');
+    }
   };
 
   return (
@@ -415,9 +570,9 @@ const BudgetScreen: React.FC = () => {
           totalIncome={totalIncome}
           currentTotalBudget={totalBudgetLimit}
           onClose={() => setShowCategoryEdit(false)}
-          onSave={(newLimit) => {
+          onSave={async (newLimit) => {
             if (selectedCategoryBudget?.category) {
-              handleSaveCategoryBudget(selectedCategoryBudget.category.id, newLimit);
+              await handleSaveCategoryBudget(selectedCategoryBudget.category.id, newLimit);
             }
             setShowCategoryEdit(false);
           }}
