@@ -1,46 +1,68 @@
 // SmartSpend AI - Receipt parser service (server-side).
-// Mirrors the role of the parser in SAD §4.2.6 ("extractReceiptData",
-// "suggestCategory"). Takes the raw text Gemini returns and the list of
-// available categories from the data layer, and produces an
-// ExtractedReceiptData envelope the mobile client understands.
+//
+// Gemini performs the vision/OCR step. This module validates and normalises
+// the model response so the mobile app and Supabase receive one stable shape.
+// In particular, the OCR amount is signed: negative = expense and positive =
+// income. The persisted `amount` remains absolute because the transactions
+// table stores a positive amount together with its `type` column.
 
 const { analyzeReceipt, GeminiApiError, GeminiConfigError } = require('./geminiClient');
 
-const SYSTEM_PROMPT = `Bạn là một trợ lý AI chuyên trích xuất dữ liệu từ hóa đơn (receipt / bill) cho ứng dụng quản lý chi tiêu cá nhân tại Việt Nam.
+function buildSystemPrompt(categories) {
+  const expenseCats = categories
+    .filter((c) => c.type === 'expense')
+    .map((c) => c.name)
+    .join(', ');
+  const incomeCats = categories
+    .filter((c) => c.type === 'income')
+    .map((c) => c.name)
+    .join(', ');
 
-Nhiệm vụ: nhìn ảnh hóa đơn và trả về ĐÚNG MỘT đối tượng JSON (không markdown, không giải thích, không code block) theo schema:
+  return `You are a financial OCR assistant for a Vietnamese personal finance app.
 
+The image can be a receipt, a bank transfer received, a salary/bonus slip, or a bank transfer sent.
+
+SIGN RULE (mandatory):
+- Return the OCR amount as a signed integer in VND. A negative amount means EXPENSE. A positive amount means INCOME.
+- For a purchase receipt or money sent out, return a negative amount (for example -130000).
+- For money received, salary, bonus, or investment return, return a positive amount (for example 13000000).
+- Never remove the sign and never return an absolute value for the signed amount.
+
+Return exactly one JSON object (no markdown and no explanation) with this schema:
 {
-  "amount": <number>,                  // Tổng tiền cuối cùng phải trả bằng VND (số nguyên). Ưu tiên "Tổng cộng/TOTAL/Grand Total/Thanh toán".
-  "date": "<YYYY-MM-DDTHH:mm:ss>",     // Ngày giờ trên hóa đơn, ISO 8601, timezone Asia/Ho_Chi_Minh. Không thấy giờ thì 12:00:00.
-  "merchant_name": "<string>",         // Tên cửa hàng / nhà hàng / brand.
-  "suggested_category": "<string>",    // Một trong: Ăn uống, Di chuyển, Mua sắm, Học tập, Khác, Lương, Thưởng, Đầu tư.
-  "transaction_type": "expense" | "income", // mặc định "expense".
-  "confidence": {                      // mức độ tin cậy 0-100
+  "amount": <signed integer>,
+  "signed_amount": <signed integer>,
+  "date": "<YYYY-MM-DDTHH:mm:ss>",
+  "merchant_name": "<string>",
+  "suggested_category": "<string>",
+  "transaction_type": "expense" | "income",
+  "confidence": {
     "amount": <number>,
     "date": <number>,
     "merchant_name": <number>,
     "category": <number>,
     "type": <number>
   },
-  "notes": "<string>"                  // ghi chú ngắn ≤120 ký tự, rỗng nếu không có.
+  "notes": "<string>"
 }
 
-Yêu cầu:
-- amount là số nguyên dương.
-- Nếu không phải hóa đơn hoặc không đọc được, vẫn trả JSON đúng schema, đặt confidence thấp (10-30) và notes="Không nhận diện được hóa đơn".
-- Trả về JSON GỌN, không thêm line_items, không markdown, không text thừa.
+EXPENSE CATEGORIES (use only for a negative amount): ${expenseCats}
+INCOME CATEGORIES (use only for a positive amount): ${incomeCats}
+
+Requirements:
+- Prefer the final total/grand total on receipts and the transaction amount on bank screenshots.
+- The sign is the source of truth for type. Keep transaction_type consistent with it.
+- suggested_category must exactly match a category name from the correct list (including accents).
+- If a required field is not visible, return null/empty string and confidence 10-30 for that field. Do not invent values.
+- Return concise JSON only.
 `;
+}
 
 const USER_PROMPT =
-  'Trích xuất thông tin từ ảnh hóa đơn này và trả về JSON theo schema.';
+  'Read the image with OCR and return the signed financial transaction JSON described in the system instructions.';
 
-/* -------------------------------------------------------------------------- */
-/* Static category list (mirror of mobile app)                               */
-/* -------------------------------------------------------------------------- */
-// In production this comes from Supabase via the Category Repository
-// (SAD §4.3.x). For now we hardcode the same defaults the mobile app uses so
-// the API can return category_id directly.
+// Fallback list used when the mobile request cannot provide the categories
+// loaded from Supabase. IDs and names mirror the mobile defaults.
 const CATEGORIES = [
   { id: 'exp-cat-1', name: 'Ăn uống', type: 'expense' },
   { id: 'exp-cat-2', name: 'Di chuyển', type: 'expense' },
@@ -52,34 +74,25 @@ const CATEGORIES = [
   { id: 'inc-cat-3', name: 'Đầu tư', type: 'income' },
 ];
 
-/* -------------------------------------------------------------------------- */
-/* Public                                                                     */
-/* -------------------------------------------------------------------------- */
-
 async function parseReceipt({ mediaType, buffer, availableCategories }) {
+  const suppliedCategories = normaliseCategories(availableCategories);
+  const cats = suppliedCategories.length > 0 ? suppliedCategories : CATEGORIES;
+
   const { rawText, model, usage } = await analyzeReceipt({
     mediaType,
     buffer,
-    system: SYSTEM_PROMPT,
+    system: buildSystemPrompt(cats),
     userPrompt: USER_PROMPT,
   });
 
   const json = safeParseJson(rawText);
   if (!json) {
-    // eslint-disable-next-line no-console
-    console.error('[receiptParser] Gemini rawText was not parseable as JSON:');
-    // eslint-disable-next-line no-console
-    console.error(rawText);
     const err = new Error(
       'Gemini trả về kết quả không đúng định dạng JSON. Vui lòng thử lại với ảnh rõ hơn.',
     );
     err.status = 502;
     throw err;
   }
-
-  const cats = Array.isArray(availableCategories) && availableCategories.length > 0
-    ? availableCategories
-    : CATEGORIES;
 
   return {
     model,
@@ -89,13 +102,9 @@ async function parseReceipt({ mediaType, buffer, availableCategories }) {
   };
 }
 
-/* -------------------------------------------------------------------------- */
-/* Helpers                                                                    */
-/* -------------------------------------------------------------------------- */
-
 function safeParseJson(text) {
   if (!text) return null;
-  const stripped = text
+  const stripped = String(text)
     .replace(/^```(?:json)?/i, '')
     .replace(/```$/i, '')
     .trim();
@@ -115,77 +124,180 @@ function safeParseJson(text) {
   }
 }
 
-function clampConfidence(n) {
-  const v = Number(n);
-  if (!Number.isFinite(v)) return 50;
-  if (v < 0) return 0;
-  if (v > 100) return 100;
-  return Math.round(v);
+function clampConfidence(value, fallback = 30) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(0, Math.min(100, Math.round(number)));
 }
 
-function pickCategoryByName(name, categories) {
+function confidenceFor(value, isValid) {
+  const confidence = clampConfidence(value, isValid ? 60 : 15);
+  // A model must not mark a field as highly confident when it was absent.
+  return isValid ? confidence : Math.min(confidence, 30);
+}
+
+function normaliseCategories(categories) {
+  if (!Array.isArray(categories)) return [];
+  return categories
+    .map((category) => ({
+      ...category,
+      id: category && (category.id || category.category_id),
+      name: category && typeof category.name === 'string' ? category.name.trim() : '',
+      type: category && category.type,
+    }))
+    .filter((category) =>
+      category.id &&
+      category.name &&
+      (category.type === 'income' || category.type === 'expense'),
+    );
+}
+
+function parseSignedAmount(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (typeof value !== 'string' || !value.trim()) return 0;
+
+  const text = value.trim();
+  const negative = /^[\u2212-]/.test(text) || /[\u2212-]$/.test(text) || /^\(.*\)$/.test(text);
+  // VND OCR commonly uses dots/commas as thousands separators. Removing all
+  // non-digits turns "-130.000" into -130000 instead of -130.
+  const digits = text.replace(/[^0-9]/g, '');
+  if (!digits) return 0;
+  const parsed = Number(digits);
+  if (!Number.isFinite(parsed)) return 0;
+  return negative ? -parsed : parsed;
+}
+
+function pickCategoryByName(name, categories, type) {
   if (!name) return null;
-  const lower = String(name).trim().toLowerCase();
+  const lower = foldText(name);
+  const scoped = categories.filter((category) => category.type === type);
   return (
-    categories.find((c) => String(c.name).trim().toLowerCase() === lower) ||
-    categories.find((c) => lower.includes(String(c.name).trim().toLowerCase())) ||
+    scoped.find((category) => foldText(category.name) === lower) ||
+    scoped.find((category) => foldText(category.name).includes(lower)) ||
+    scoped.find((category) => lower.includes(foldText(category.name))) ||
     null
   );
 }
 
+function foldText(value) {
+  return String(value)
+    .trim()
+    .toLocaleLowerCase('vi-VN')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd');
+}
+
 function mapToExtractedReceiptData(parsed, categories) {
-  const rawAmount = Number(parsed.amount);
-  const amount =
-    Number.isFinite(rawAmount) && rawAmount > 0 ? Math.round(rawAmount) : 0;
+  const normalisedCategories = normaliseCategories(categories);
+  categories = normalisedCategories.length > 0 ? normalisedCategories : CATEGORIES;
 
-  const type = parsed.transaction_type === 'income' ? 'income' : 'expense';
+  const hasExplicitSignedAmount = Boolean(parsed &&
+    parsed.signed_amount !== undefined &&
+    parsed.signed_amount !== null &&
+    parsed.signed_amount !== '');
+  const amountValue = hasExplicitSignedAmount
+    ? parsed.signed_amount
+    : parsed && parsed.amount;
+  let signedAmount = parseSignedAmount(amountValue);
+  // Backward compatibility for an older model response where `amount` was
+  // documented as an absolute value: only that legacy shape may use the
+  // declared type to restore the missing expense sign. New responses always
+  // include signed_amount and are governed exclusively by its sign.
+  if (!hasExplicitSignedAmount && signedAmount > 0 && parsed && parsed.transaction_type === 'expense') {
+    signedAmount = -signedAmount;
+  }
+  const roundedSignedAmount = Math.round(signedAmount);
 
-  const dateIso = typeof parsed.date === 'string' ? parsed.date : '';
+  // The OCR sign is authoritative. The semantic type is only a fallback for
+  // an unreadable/zero amount, and is deliberately given low confidence.
+  const type = roundedSignedAmount < 0
+    ? 'expense'
+    : roundedSignedAmount > 0
+      ? 'income'
+      : parsed && parsed.transaction_type === 'income' ? 'income' : 'expense';
+  const declaredType = parsed && parsed.transaction_type;
+  const typeMatchesSign =
+    roundedSignedAmount === 0 ||
+    (declaredType !== 'income' && declaredType !== 'expense') ||
+    declaredType === type;
+  const amount = Math.abs(roundedSignedAmount);
+
+  const dateIso = parsed && typeof parsed.date === 'string' ? parsed.date : '';
   const parsedDate = dateIso ? new Date(dateIso) : new Date();
-  const date = isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
+  const hasValidDate = Boolean(dateIso) && !Number.isNaN(parsedDate.getTime());
+  const date = hasValidDate ? parsedDate : new Date();
 
-  const merchantName =
-    typeof parsed.merchant_name === 'string' && parsed.merchant_name.trim().length > 0
-      ? parsed.merchant_name.trim()
-      : 'Cửa hàng';
-
+  const rawMerchantName =
+    parsed && typeof parsed.merchant_name === 'string' ? parsed.merchant_name.trim() : '';
+  const merchantName = isPlaceholderText(rawMerchantName) ? '' : rawMerchantName;
   const suggestedCategoryName =
-    typeof parsed.suggested_category === 'string'
+    parsed && typeof parsed.suggested_category === 'string'
       ? parsed.suggested_category.trim()
       : '';
+  const matchedSuggestedCategory = pickCategoryByName(
+    suggestedCategoryName,
+    categories,
+    type,
+  );
   const matchedCategory =
-    pickCategoryByName(suggestedCategoryName, categories) ||
-    (type === 'income'
-      ? categories.find((c) => c.type === 'income')
-      : categories.find((c) => c.type === 'expense')) ||
-    categories[0] ||
-    null;
+    matchedSuggestedCategory || categories.find((category) => category.type === type) || null;
 
-  const note =
-    typeof parsed.notes === 'string' ? parsed.notes.slice(0, 200) : '';
+  const confidence = parsed && parsed.confidence && typeof parsed.confidence === 'object'
+    ? parsed.confidence
+    : {};
+  const fieldConfidence = {
+    amount: confidenceFor(confidence.amount, amount > 0),
+    storeName: confidenceFor(confidence.merchant_name, merchantName.length > 0),
+    date: confidenceFor(confidence.date, hasValidDate),
+    category: confidenceFor(confidence.category, Boolean(matchedSuggestedCategory)),
+    type: confidenceFor(confidence.type, roundedSignedAmount !== 0 && typeMatchesSign),
+  };
 
-  const conf = parsed.confidence || {};
+  const missingFields = [];
+  if (amount <= 0) missingFields.push('amount');
+  if (!merchantName) missingFields.push('storeName');
+  if (!hasValidDate) missingFields.push('date');
+  if (!matchedSuggestedCategory) missingFields.push('category');
+  if (roundedSignedAmount === 0 || !typeMatchesSign) missingFields.push('type');
+
+  // The minimum field confidence prevents one missing required field from
+  // being hidden by a high average from the other fields.
+  const overallConfidence = Math.min(...Object.values(fieldConfidence));
+  const needsManualReview = missingFields.length > 0 || overallConfidence < 80;
+  const note = parsed && typeof parsed.notes === 'string' ? parsed.notes.slice(0, 200) : '';
+
   return {
+    // `amount` is the positive value expected by Supabase transactions.amount.
+    // `signedAmount` preserves the OCR sign used to derive `type`.
     amount,
+    signedAmount: roundedSignedAmount,
     storeName: merchantName,
     date: date.toISOString(),
     categoryId: matchedCategory ? matchedCategory.id : '',
     categoryName: matchedCategory ? matchedCategory.name : suggestedCategoryName,
-    note,
+    note: note || (needsManualReview
+      ? 'Một số trường chưa nhận diện được, vui lòng kiểm tra và điền bổ sung.'
+      : ''),
     type,
-    confidence: {
-      amount: clampConfidence(conf.amount),
-      storeName: clampConfidence(conf.merchant_name),
-      date: clampConfidence(conf.date),
-      category: clampConfidence(conf.category),
-      type: clampConfidence(conf.type),
-    },
+    confidence: { ...fieldConfidence, overall: overallConfidence },
+    overallConfidence,
+    missingFields,
+    needsManualReview,
+    autoApproved: !needsManualReview,
   };
+}
+
+function isPlaceholderText(value) {
+  if (!value) return true;
+  return /^(c(?:u|ử)a\s*h(?:a|à)ng|store|merchant|unknown|n\/?a|none|null|kh(?:o|ô)ng\s*r(?:o|õ))$/i.test(value.trim());
 }
 
 module.exports = {
   parseReceipt,
   CATEGORIES,
+  mapToExtractedReceiptData,
+  parseSignedAmount,
   GeminiApiError,
   GeminiConfigError,
 };

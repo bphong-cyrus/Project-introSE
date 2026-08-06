@@ -11,6 +11,7 @@ interface ReceiptPreviewProps {
   dateString: string;
   confidenceLevel: number;
   imageUri?: string;
+  needsManualReview?: boolean;
 }
 
 const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({
@@ -18,6 +19,7 @@ const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({
   dateString,
   confidenceLevel,
   imageUri,
+  needsManualReview = false,
 }) => {
   const [expanded, setExpanded] = useState(true);
 
@@ -30,8 +32,10 @@ const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({
         activeOpacity={0.7}
       >
         <Text style={styles.headerTitle}>BẢN XEM TRƯỚC HÓA ĐƠN</Text>
-        <View style={styles.ocrBadge}>
-          <Text style={styles.ocrBadgeText}>OCR confident</Text>
+        <View style={[styles.ocrBadge, needsManualReview && styles.ocrBadgeWarning]}>
+          <Text style={[styles.ocrBadgeText, needsManualReview && styles.ocrBadgeTextWarning]}>
+            {needsManualReview ? 'Cần kiểm tra OCR' : 'OCR confident'}
+          </Text>
         </View>
       </TouchableOpacity>
 
@@ -94,10 +98,16 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 12,
   },
+  ocrBadgeWarning: {
+    backgroundColor: '#FFF7E0',
+  },
   ocrBadgeText: {
     fontSize: 10,
     fontWeight: '600',
     color: '#1976D2',
+  },
+  ocrBadgeTextWarning: {
+    color: '#8A5A00',
   },
   previewCard: {
     flexDirection: 'row',
