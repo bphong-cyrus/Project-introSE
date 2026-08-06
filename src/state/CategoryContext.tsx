@@ -19,7 +19,7 @@ const defaultExpenseCategories: Category[] = [
 const defaultIncomeCategories: Category[] = [
   { id: 'inc-cat-1', userId: '', name: 'Lương', type: 'income', icon: 'cash', color: '#81C784', isDefault: true },
   { id: 'inc-cat-2', userId: '', name: 'Thưởng', type: 'income', icon: 'gift', color: '#FFD54F', isDefault: true },
-  { id: 'inc-cat-3', userId: '', name: 'Khác', type: 'income', icon: 'wallet', color: '#4DB6AC', isDefault: true },
+  { id: 'inc-cat-3', userId: '', name: 'Đầu tư', type: 'income', icon: 'trending-up', color: '#4DB6AC', isDefault: true },
 ];
 
 interface CategoryContextValue {

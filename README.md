@@ -44,7 +44,7 @@ Controller).
    folder spec):
    ```bash
    cd src/backend
-   cp .env.example .env                  # paste GOOGLE_API_KEY vừa lấy
+   cp .env.example .env                  # paste GEMINI_API_KEYS (4 keys, comma-separated)
    npm install
    npm start                              # listens on http://localhost:4000
    ```

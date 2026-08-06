@@ -62,12 +62,20 @@ Chỉ chạy **lần đầu** hoặc khi `package.json` thay đổi.
 Tạo file `.env` trong thư mục `src/backend/` với nội dung:
 
 ```
-GOOGLE_API_KEY=<paste-api-key-của-bạn-vào-đây>
+# Single-key legacy option (omit when using GEMINI_API_KEYS below):
+# GOOGLE_API_KEY=<paste-api-key-của-bạn-vào-đây>
 GEMINI_MODEL=gemini-3.6-flash
+# Use this instead of GOOGLE_API_KEY when rotating multiple keys:
+GEMINI_API_KEYS=<key-1>,<key-2>,<key-3>,<key-4>
 GEMINI_KEY_COOLDOWN_MS=60000
 PORT=4000
 MAX_UPLOAD_BYTES=4194304
 ```
+
+Để dùng nhiều key, điền 4 key vào `GEMINI_API_KEYS` (phân tách bằng dấu phẩy).
+Pool sẽ luân phiên key và tự chuyển sang key kế tiếp khi Gemini trả quota/rate
+limit (429). Có thể dùng dạng tương đương `GOOGLE_API_KEY_1` đến
+`GOOGLE_API_KEY_4`. Key chỉ đặt trong `src/backend/.env`, không đưa vào mobile.
 
 **Cách lấy API key Gemini** (miễn phí, không cần thẻ):
 
@@ -123,11 +131,15 @@ curl.exe -s -F "image=@D:/projects/introSE/Project-introSE/src/backend/uploads/t
   "success": true,
   "data": {
     "amount": 130000,
+    "signedAmount": -130000,
     "storeName": "LONG KÝ - CƠM GÀ DA RẤT GIÒN",
     "date": "2026-07-26T05:44:00.000Z",
     "categoryId": "exp-cat-1",
     "categoryName": "Ăn uống",
     "type": "expense",
+    "overallConfidence": 95,
+    "needsManualReview": false,
+    "missingFields": [],
     "confidence": {
       "amount": 99,
       "storeName": 99,

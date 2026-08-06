@@ -83,6 +83,7 @@ and the user can retry without losing context.
 | Field | Description |
 | --- | --- |
 | `amount` | Tổng tiền VND (integer) |
+| `signedAmount` | Số tiền OCR có dấu: âm = chi tiêu, dương = thu nhập |
 | `date` | Ngày giờ trên hóa đơn (Date) |
 | `storeName` | Tên cửa hàng |
 | `categoryId` | Mapped to local `Category.id` |
@@ -90,6 +91,9 @@ and the user can retry without losing context.
 | `note` | Ghi chú ngắn (≤120 ký tự) |
 | `type` | `expense` \| `income` |
 | `confidence` | 0-100 cho từng trường (amount/date/storeName/category/type) |
+| `overallConfidence` | Điểm thấp nhất của các trường bắt buộc |
+| `needsManualReview` | `true` khi thiếu trường hoặc confidence dưới ngưỡng; UI yêu cầu người dùng kiểm tra/điền |
+| `missingFields` | Các trường OCR không trích xuất được |
 | `imageUri` | local URI from expo-image-picker (saved as `Transaction.imageUrl`) |
 
 ## Limitations & future work
