@@ -91,22 +91,21 @@ export async function analyzeReceiptOnBackend(args: {
 }): Promise<AnalyzeReceiptResult> {
   const { base64, mediaType, categories } = args;
 
+  // Build a real Blob from base64 so multer recognises the field as a file.
+  // Fall back to the RN-style {uri,name,type} object only when Blob/atob
+  // are unavailable (pure native without polyfills).
   const form = new FormData();
-  // React Native's FormData accepts { uri, name, type } as a file field.
-  // We re-build the FormData file from the base64 we already have, but
-  // we keep the original `uri` for traceability / re-upload.
+  const fileName = `receipt.${guessExt(mediaType)}`;
   const fileBlob = base64ToBlob(normaliseBase64(base64), mediaType);
-  // RN's FormData#append for files needs an object with uri/name/type.
-  form.append('image', {
-    // @ts-ignore - RN-specific FormData file shape
-    uri: args.uri,
-    name: `receipt.${guessExt(mediaType)}`,
-    type: mediaType,
-  } as any);
-  // Some platforms accept the blob directly; harmless to include both.
   if (fileBlob) {
-    // @ts-ignore
-    form.append('image_blob', fileBlob, `receipt.${guessExt(mediaType)}`);
+    form.append('image', fileBlob, fileName);
+  } else {
+    form.append('image', {
+      // @ts-ignore - RN-specific FormData file shape
+      uri: args.uri,
+      name: fileName,
+      type: mediaType,
+    } as any);
   }
 
   if (categories && categories.length > 0) {
@@ -142,9 +141,29 @@ export async function analyzeReceiptOnBackend(args: {
   }
 
   // The backend returns ISO string for date; convert back to Date for the UI.
+  const rawData = body.data as Partial<ExtractedReceiptData>;
+  const confidence = rawData.confidence || {
+    amount: 0,
+    storeName: 0,
+    date: 0,
+    category: 0,
+    type: 0,
+  };
   const data: ExtractedReceiptData = {
-    ...(body.data as ExtractedReceiptData),
-    date: new Date((body.data as any).date),
+    ...(rawData as ExtractedReceiptData),
+    amount: Number.isFinite(Number(rawData.amount)) ? Math.abs(Number(rawData.amount)) : 0,
+    signedAmount: Number.isFinite(Number(rawData.signedAmount))
+      ? Number(rawData.signedAmount)
+      : undefined,
+    storeName: typeof rawData.storeName === 'string' ? rawData.storeName : '',
+    date: new Date((rawData as any).date),
+    confidence,
+    overallConfidence: Number.isFinite(Number(rawData.overallConfidence))
+      ? Number(rawData.overallConfidence)
+      : Number(confidence.overall || 0),
+    missingFields: Array.isArray(rawData.missingFields) ? rawData.missingFields : [],
+    needsManualReview: rawData.needsManualReview !== false,
+    autoApproved: rawData.autoApproved === true,
     imageUri: args.uri,
   };
 

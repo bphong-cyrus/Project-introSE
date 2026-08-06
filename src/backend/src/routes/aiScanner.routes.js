@@ -19,8 +19,12 @@ router.get('/categories', controller.listCategories);
 router.post(
   '/analyze',
   (req, res, next) => {
+    console.log('[DEBUG] POST /analyze incoming');
+    console.log('[DEBUG]   Content-Type:', req.headers['content-type']);
+    console.log('[DEBUG]   Body keys:', req.body ? Object.keys(req.body) : 'no body');
     upload.single('image')(req, res, (err) => {
       if (err) {
+        console.error('[DEBUG]   Multer error:', err.message, err.code);
         // Convert multer errors to a clean JSON 4xx response
         const status = err.status || 400;
         const isTooLarge =
@@ -31,6 +35,7 @@ router.post(
           : err.message;
         return res.status(status).json({ success: false, error: message });
       }
+      console.log('[DEBUG]   req.file:', req.file ? `${req.file.fieldname} (${req.file.mimetype}, ${req.file.size} bytes)` : 'MISSING');
       next();
     });
   },

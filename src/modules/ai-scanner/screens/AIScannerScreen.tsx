@@ -48,6 +48,8 @@ interface AIScannerScreenProps {
 
 export interface ExtractedReceiptData {
   amount: number;
+  /** Signed amount read by OCR: negative = expense, positive = income. */
+  signedAmount?: number;
   storeName: string;
   date: Date;
   categoryId: string;
@@ -61,7 +63,12 @@ export interface ExtractedReceiptData {
     date: number;
     category: number;
     type: number;
+    overall?: number;
   };
+  overallConfidence?: number;
+  missingFields?: string[];
+  needsManualReview?: boolean;
+  autoApproved?: boolean;
 }
 
 type PermissionState = 'pending' | 'granted' | 'denied';

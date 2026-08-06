@@ -31,14 +31,14 @@ class GeminiApiError extends Error {
 }
 
 function resolveConfig() {
-  const apiKey =
+  const model =
     process.env.GEMINI_MODEL && process.env.GEMINI_MODEL.trim().length > 0
       ? process.env.GEMINI_MODEL
       : DEFAULT_MODEL;
   // Touch the pool so a missing-key env throws the friendly error at
   // first use rather than first request.
   const pool = getPool();
-  return { model: apiKey, pool };
+  return { model, pool };
 }
 
 function buildRequestBody({ mediaType, buffer, system, userPrompt, maxTokens, temperature }) {

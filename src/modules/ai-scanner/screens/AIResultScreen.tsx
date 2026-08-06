@@ -21,6 +21,7 @@ import { Image } from 'react-native';
 import SuccessBanner from '../components/SuccessBanner';
 import ReceiptPreview from '../components/ReceiptPreview';
 import CategoryDropdown from '../components/CategoryDropdown';
+import TypeSelector from '../../transactions/components/TypeSelector';
 import type { ExtractedReceiptData } from './AIScannerScreen';
 
 interface AIResultScreenProps {
@@ -28,6 +29,9 @@ interface AIResultScreenProps {
   onBack: () => void;
   onSaved: () => void;
 }
+
+const normaliseCategoryName = (value: string): string =>
+  value.trim().toLocaleLowerCase('vi-VN').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
 
 const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }) => {
   const { addTransaction } = useTransactions();
@@ -41,13 +45,17 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
   const [transactionNameEdited, setTransactionNameEdited] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [date, setDate] = useState<Date>(data.date);
+  const [dateEdited, setDateEdited] = useState<boolean>(!data.missingFields?.includes('date'));
   const [timeString, setTimeString] = useState<string>(() => {
     const d = data.date;
     return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
   });
   const [note, setNote] = useState<string>(data.note || '');
   const [transactionNameError, setTransactionNameError] = useState<string>('');
+  const [storeNameError, setStoreNameError] = useState<string>('');
   const [amountError, setAmountError] = useState<string>('');
+  const [categoryError, setCategoryError] = useState<string>('');
+  const [dateError, setDateError] = useState<string>('');
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
@@ -57,21 +65,12 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
 
   // Initialize selected category from extracted data
   React.useEffect(() => {
-    if (transactionType === 'expense') {
-      const matched = expenseCategories.find(c => c.id === data.categoryId);
-      if (matched) {
-        setSelectedCategory(matched);
-      } else if (data.categoryName) {
-        const nameMatch = expenseCategories.find(c => c.name === data.categoryName);
-        if (nameMatch) setSelectedCategory(nameMatch);
-        else setSelectedCategory(expenseCategories[0]);
-      } else {
-        setSelectedCategory(expenseCategories[0]);
-      }
-    } else {
-      setSelectedCategory(incomeCategories[0] || null);
-    }
-  }, [transactionType, expenseCategories, incomeCategories, data.categoryId, data.categoryName]);
+    const available = transactionType === 'expense' ? expenseCategories : incomeCategories;
+    const matched = available.find(c => c.id === data.categoryId) ||
+      available.find(c => normaliseCategoryName(c.name) === normaliseCategoryName(data.categoryName || ''));
+    const categoryWasMissing = data.missingFields?.includes('category');
+    setSelectedCategory(matched || (categoryWasMissing ? null : available[0]) || null);
+  }, [transactionType, expenseCategories, incomeCategories, data.categoryId, data.categoryName, data.missingFields]);
 
   // Format amount with commas
   const formatAmount = (value: string): string => {
@@ -96,11 +95,12 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
 
   const handleStoreNameChange = useCallback((text: string) => {
     setStoreName(text);
+    if (storeNameError) setStoreNameError('');
     if (!transactionNameEdited) {
       setTransactionName(text);
       if (transactionNameError) setTransactionNameError('');
     }
-  }, [transactionNameEdited, transactionNameError]);
+  }, [storeNameError, transactionNameEdited, transactionNameError]);
 
   // Handle time change
   const handleTimeChange = useCallback((text: string) => {
@@ -111,7 +111,10 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
   // Handle save
   const handleSave = useCallback(async () => {
     setTransactionNameError('');
+    setStoreNameError('');
     setAmountError('');
+    setCategoryError('');
+    setDateError('');
 
     const numericAmount = parseInt(amount.replace(/[^0-9]/g, ''), 10);
     const trimmedTransactionName = transactionName.trim();
@@ -127,10 +130,17 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
     }
 
     if (!storeName.trim()) {
+      setStoreNameError('Tên cửa hàng/người chuyển là bắt buộc');
+      return;
+    }
+
+    if (!dateEdited) {
+      setDateError('Vui lòng nhập ngày giao dịch');
       return;
     }
 
     if (!selectedCategory) {
+      setCategoryError('Vui lòng chọn danh mục');
       return;
     }
 
@@ -161,7 +171,7 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
     } catch (error: any) {
       Alert.alert('Không thể lưu giao dịch', error?.message || 'Vui lòng thử lại sau.');
     }
-  }, [amount, transactionName, storeName, selectedCategory, date, timeString, note, transactionType, data.imageUri, addTransaction, onSaved]);
+  }, [amount, transactionName, storeName, selectedCategory, date, dateEdited, timeString, note, transactionType, data.imageUri, addTransaction, onSaved]);
 
   // Success overlay
   if (showSuccess) {
@@ -212,7 +222,11 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
         keyboardShouldPersistTaps="handled"
       >
         {/* Success Banner */}
-        <SuccessBanner />
+        <SuccessBanner
+          needsManualReview={data.needsManualReview}
+          overallConfidence={data.overallConfidence ?? data.confidence.overall ?? 0}
+          missingFields={data.missingFields}
+        />
 
         {/* Receipt Preview */}
         <ReceiptPreview
@@ -220,6 +234,7 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
           dateString={dateConfidenceString}
           confidenceLevel={data.confidence.amount}
           imageUri={data.imageUri}
+          needsManualReview={data.needsManualReview}
         />
 
         {/* Transaction Type - AI Detected (Read-only with AI badge) */}
@@ -232,6 +247,12 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
               </Text>
             </View>
           </View>
+          {data.missingFields?.includes('type') ? (
+            <TypeSelector
+              selectedType={transactionType}
+              onTypeChange={setTransactionType}
+            />
+          ) : (
           <View style={styles.aiTypeContainer}>
             <Text style={styles.aiTypeText}>
               {transactionType === 'expense' ? 'Chi tiêu' : 'Thu nhập'}
@@ -241,6 +262,7 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
               <Text style={styles.aiBadgeText}>AI</Text>
             </View>
           </View>
+          )}
         </View>
 
         {/* Transaction Name */}
@@ -286,6 +308,11 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
             <Text style={styles.currencySymbol}>VND</Text>
           </View>
           {amountError ? <Text style={styles.errorText}>{amountError}</Text> : null}
+          {typeof data.signedAmount === 'number' && data.signedAmount !== 0 ? (
+            <Text style={styles.signHint}>
+              OCR đọc {data.signedAmount < 0 ? 'âm → chi tiêu' : 'dương → thu nhập'}
+            </Text>
+          ) : null}
         </View>
 
         {/* Store Name */}
@@ -299,12 +326,13 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
             </View>
           </View>
           <TextInput
-            style={styles.textInput}
+            style={[styles.textInput, storeNameError ? styles.textInputError : null]}
             value={storeName}
             onChangeText={handleStoreNameChange}
             placeholder="Nhập tên cửa hàng"
             placeholderTextColor={Colors.textMuted}
           />
+          {storeNameError ? <Text style={styles.errorText}>{storeNameError}</Text> : null}
         </View>
 
         {/* Date & Time Row */}
@@ -334,6 +362,8 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
                       newDate.setMonth(month - 1);
                       newDate.setFullYear(year);
                       setDate(newDate);
+                      setDateEdited(true);
+                      setDateError('');
                     }
                   }
                 }}
@@ -344,6 +374,7 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
               />
               <Ionicons name="calendar-outline" size={18} color={Colors.textSecondary} />
             </View>
+            {dateError ? <Text style={styles.errorText}>{dateError}</Text> : null}
           </View>
           <View style={[styles.section, styles.halfWidth]}>
             <Text style={styles.sectionLabel}>THỜI GIAN</Text>
@@ -385,6 +416,7 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
               <Text style={styles.aiBadgeText}>AI</Text>
             </View>
           </TouchableOpacity>
+          {categoryError ? <Text style={styles.errorText}>{categoryError}</Text> : null}
         </View>
 
         {/* Note */}
@@ -420,6 +452,7 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
           selectedCategory={selectedCategory}
           onSelect={(cat) => {
             setSelectedCategory(cat);
+            setCategoryError('');
             setShowCategoryDropdown(false);
           }}
           onClose={() => setShowCategoryDropdown(false)}
@@ -631,6 +664,11 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 12,
     color: Colors.danger,
+    marginTop: 6,
+  },
+  signHint: {
+    fontSize: 12,
+    color: Colors.textSecondary,
     marginTop: 6,
   },
   saveButtonWrapper: {

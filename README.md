@@ -37,7 +37,42 @@ SmartSpend AI là hệ thống quản lý chi tiêu cá nhân, hỗ trợ nhập
 
 ## Kiến trúc tổng quan
 
-```text
+### Run it
+
+1. **Lấy Gemini API key miễn phí** tại <https://aistudio.google.com/apikey>
+   (không cần thẻ tín dụng, quota miễn phí 15 RPM / 1500 RPD, bao gồm cả vision).
+
+2. **Backend** (Express.js business layer — nằm trong `src/` theo
+   folder spec):
+   ```bash
+   cd src/backend
+   cp .env.example .env                  # paste GEMINI_API_KEYS (4 keys, comma-separated)
+   npm install
+   npm start                              # listens on http://localhost:4000
+   ```
+
+3. **Mobile app** (Expo presentation tier):
+   ```bash
+   cd src
+   npx expo start -c                      # `-c` clears the Metro cache
+   ```
+
+   Optional `src/.env` (tạo cạnh `src/package.json`):
+   ```
+   EXPO_PUBLIC_API_BASE_URL=http://<your-LAN-ip>:4000   # cho thiết bị thật
+   ```
+   Mặc định `http://10.0.2.2:4000` đã chạy được từ Android emulator.
+
+4. **Smoke test API** không cần mở app:
+   ```bash
+   curl http://localhost:4000/health
+   curl http://localhost:4000/api/ai-scanner/health
+   curl -F "image=@some-receipt.jpg" http://localhost:4000/api/ai-scanner/analyze
+   ```
+
+### Repo layout (relevant slice)
+
+```
 Project-introSE/
 ├── README.md
 ├── docs/                         Tài liệu môn học, requirement, design, test
