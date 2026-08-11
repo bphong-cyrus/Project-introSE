@@ -17,12 +17,17 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle, Polyline, Text as SvgText } from 'react-native-svg';
 import { supabase, Database } from '../../data/datasources/supabase/supabase';
+import AILogsPage from './pages/AILogsPage';
 import DashboardPage from './pages/DashboardPage';
+import FeedbackPage from './pages/FeedbackPage';
 import NotificationsPage from './pages/NotificationsPage';
 import UsersPage from './pages/UsersPage';
 
+type CategoryRow = Database['public']['Tables']['categories']['Row'];
 type ProfileRow = Database['public']['Tables']['user_profiles']['Row'];
 type TransactionRow = Database['public']['Tables']['transactions']['Row'];
+type ReceiptRow = Database['public']['Tables']['receipts']['Row'];
+type ReceiptImageRow = Database['public']['Tables']['receipt_images']['Row'];
 type ScanLogRow = Database['public']['Tables']['scan_logs']['Row'];
 type OcrResultRow = Database['public']['Tables']['ocr_results']['Row'];
 type RecommendationRunRow = Database['public']['Tables']['recommendation_runs']['Row'];
@@ -35,15 +40,22 @@ type UserNotificationSettingsRow = Database['public']['Tables']['user_notificati
 type AuthUserRow = Database['public']['Functions']['get_admin_auth_users']['Returns'][number];
 
 type AdminAuthState = 'loading' | 'unauthenticated' | 'authenticated' | 'denied';
-type AdminSection = 'dashboard' | 'users' | 'notifications';
+type AdminSection = 'dashboard' | 'users' | 'notifications' | 'ai_logs' | 'feedback';
 type UserStatusFilter = 'all' | 'active' | 'inactive';
+type AiLogStatusFilter = 'all' | 'success' | 'failed' | 'reviewed' | 'unreviewed';
+type FeedbackStatusFilter = 'all' | 'pending' | 'in_progress' | 'resolved' | 'closed';
+type FeedbackTypeFilter = 'all' | 'bug' | 'suggestion' | 'question';
+type FeedbackPriority = 'low' | 'medium' | 'high' | 'critical';
 type CampaignAudience = 'all_users' | 'specific_users';
 type CampaignDelivery = 'now' | 'scheduled';
 
 type DashboardData = {
   authUsers: AuthUserRow[];
+  categories: CategoryRow[];
   profiles: ProfileRow[];
   transactions: TransactionRow[];
+  receipts: ReceiptRow[];
+  receiptImages: ReceiptImageRow[];
   scans: ScanLogRow[];
   ocrResults: OcrResultRow[];
   recommendationRuns: RecommendationRunRow[];
@@ -88,8 +100,11 @@ type AdminEditProfileForm = {
 
 const EMPTY_DATA: DashboardData = {
   authUsers: [],
+  categories: [],
   profiles: [],
   transactions: [],
+  receipts: [],
+  receiptImages: [],
   scans: [],
   ocrResults: [],
   recommendationRuns: [],
@@ -131,6 +146,32 @@ const monthNames = [
   'Tháng 12',
 ];
 
+const FEEDBACK_PRIORITY_OPTIONS: { value: FeedbackPriority; label: string }[] = [
+  { value: 'low', label: 'Thấp' },
+  { value: 'medium', label: 'Trung bình' },
+  { value: 'high', label: 'Cao' },
+  { value: 'critical', label: 'Khẩn cấp' },
+];
+
+const FEEDBACK_RELATED_MODULES = [
+  'AI Scanner',
+  'Budget',
+  'Transactions',
+  'Auth',
+  'Notification',
+  'Report',
+  'Other',
+];
+
+const FEEDBACK_CATEGORY_LABELS: Record<string, string> = {
+  ai_scanner: 'Lỗi Quét Hóa Đơn (AI Scanner)',
+  budget: 'Lỗi Quản Lý Ngân Sách (Budget)',
+  transactions: 'Lỗi Lịch Sử Giao Dịch (Transactions)',
+  auth: 'Lỗi Đăng Nhập / Tài Khoản (Auth)',
+  suggestion: 'Góp Ý Tính Năng Mới (Suggestion)',
+  other: 'Khác (Other)',
+};
+
 const authUserFields = [
   'uid',
   'display_name',
@@ -148,6 +189,12 @@ const getInitialAdminSection = (): AdminSection => {
   }
   if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location.pathname.startsWith('/admin/notifications')) {
     return 'notifications';
+  }
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location.pathname.startsWith('/admin/ai-logs')) {
+    return 'ai_logs';
+  }
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location.pathname.startsWith('/admin/feedback')) {
+    return 'feedback';
   }
 
   return 'dashboard';
@@ -408,7 +455,144 @@ const isPendingStatus = (status: string) => {
 
 const isBugFeedback = (feedback: FeedbackRow) => {
   const category = feedback.category.toLowerCase();
+  if (['ai_scanner', 'budget', 'transactions', 'auth'].includes(category)) return true;
   return category.includes('bug') || category.includes('lỗi') || category.includes('error');
+};
+
+const getFeedbackCategoryLabel = (category?: string | null) => {
+  if (!category) return 'Không rõ danh mục';
+  return FEEDBACK_CATEGORY_LABELS[category] || category;
+};
+
+const normalizeFeedbackStatus = (status?: string | null): FeedbackStatusFilter => {
+  const normalized = (status || 'pending').trim().toLowerCase();
+  if (normalized === 'open' || normalized === 'new') return 'pending';
+  if (normalized === 'done') return 'resolved';
+  if (normalized === 'in progress' || normalized === 'chuyển dev' || normalized === 'chuyen dev') return 'in_progress';
+  if (normalized === 'resolved') return 'resolved';
+  if (normalized === 'closed') return 'closed';
+  if (normalized === 'in_progress') return 'in_progress';
+  return 'pending';
+};
+
+const getFeedbackStatusLabel = (status?: string | null) => {
+  switch (normalizeFeedbackStatus(status)) {
+    case 'pending':
+      return 'Chờ xử lý';
+    case 'in_progress':
+      return 'Đang xử lý';
+    case 'resolved':
+      return 'Đã giải quyết';
+    case 'closed':
+      return 'Đã đóng';
+    default:
+      return 'Không rõ';
+  }
+};
+
+const getFeedbackPriorityLabel = (priority?: string | null) => {
+  switch ((priority || 'medium').toLowerCase()) {
+    case 'low':
+      return 'Thấp';
+    case 'medium':
+      return 'Trung bình';
+    case 'high':
+      return 'Cao';
+    case 'critical':
+      return 'Khẩn cấp';
+    default:
+      return priority || 'Trung bình';
+  }
+};
+
+const getFeedbackPriorityReason = (feedback: FeedbackRow) => {
+  const priority = (feedback.priority || 'medium').toLowerCase();
+  const category = feedback.category;
+
+  if (priority === 'critical') {
+    return 'Khẩn cấp khi nội dung có dấu hiệu chặn đăng nhập, khóa tài khoản, mất tiền, crash/sập ứng dụng hoặc Admin nâng mức khi chuyển Dev.';
+  }
+
+  if (priority === 'high') {
+    return 'Cao vì phản hồi thuộc nhóm Auth, Budget hoặc Transactions, các nhóm ảnh hưởng trực tiếp đến tài khoản và dữ liệu tài chính.';
+  }
+
+  if (priority === 'medium') {
+    return category === 'ai_scanner'
+      ? 'Trung bình vì lỗi AI Scanner cần kiểm tra nhưng thường không chặn truy cập tài khoản hoặc dữ liệu giao dịch đã lưu.'
+      : 'Trung bình cho phản hồi cần xử lý theo SLA thông thường hoặc dữ liệu cũ chưa có rule ưu tiên chi tiết.';
+  }
+
+  return 'Thấp cho góp ý tính năng mới hoặc mục Khác chưa có dấu hiệu lỗi nghiêm trọng.';
+};
+
+const getFeedbackType = (feedback: FeedbackRow): FeedbackTypeFilter => {
+  const source = `${feedback.category} ${feedback.subject}`.toLowerCase();
+  if (feedback.category === 'suggestion') return 'suggestion';
+  if (feedback.category === 'other') return 'question';
+  if (source.includes('suggestion') || source.includes('gợi ý') || source.includes('tính năng')) return 'suggestion';
+  if (source.includes('other') || source.includes('khác') || source.includes('hỏi') || source.includes('question')) return 'question';
+  return 'bug';
+};
+
+const getFeedbackTypeLabel = (type?: string | null) => {
+  switch (type) {
+    case 'bug':
+      return 'Báo lỗi';
+    case 'suggestion':
+      return 'Gợi ý';
+    case 'question':
+      return 'Câu hỏi';
+    default:
+      return 'Không rõ';
+  }
+};
+
+const getFeedbackDisplayCode = (feedbackId: string) => `FB-${feedbackId.slice(0, 8).toUpperCase()}`;
+
+const getScanDisplayCode = (scanLogId: string) => `AI-${scanLogId.slice(0, 8).toUpperCase()}`;
+
+const normalizeConfidencePercent = (value?: number | null) => {
+  if (value == null) return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  const percent = numeric <= 1 ? numeric * 100 : numeric;
+  return Math.max(0, Math.min(100, percent));
+};
+
+const getConfidenceLabel = (value?: number | null) => {
+  const percent = normalizeConfidencePercent(value);
+  return percent == null ? 'N/A' : `${Math.round(percent)}%`;
+};
+
+const getAverageConfidence = (values: Array<number | null | undefined>) => {
+  const normalized = values
+    .map(normalizeConfidencePercent)
+    .filter((value): value is number => value != null);
+
+  if (normalized.length === 0) return 0;
+  return normalized.reduce((sum, value) => sum + value, 0) / normalized.length;
+};
+
+const getReviewLabel = (isReviewed?: boolean | null) => (
+  isReviewed ? 'Đã kiểm tra' : 'Chưa kiểm tra'
+);
+
+const getScanStatusLabel = (scan: ScanLogRow) => {
+  const normalized = (scan.status || '').toLowerCase();
+  if (normalized === 'resolved') return 'Đã xử lý';
+  if (isFailedScan(scan)) return 'Lỗi';
+  if (normalized.includes('success') || normalized.includes('complete') || normalized.includes('done')) return 'Thành công';
+  return scan.status || 'Không rõ';
+};
+
+const getJsonStringField = (source: Record<string, unknown> | null | undefined, keys: string[]) => {
+  if (!source) return null;
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
 };
 
 const classifyFailureReason = (scan: ScanLogRow) => {
@@ -851,6 +1035,28 @@ export default function AdminApp() {
   const [selectedCampaignUserIds, setSelectedCampaignUserIds] = useState<string[]>([]);
   const [campaignError, setCampaignError] = useState('');
   const [isSavingCampaign, setIsSavingCampaign] = useState(false);
+  const [aiLogSearch, setAiLogSearch] = useState('');
+  const [aiLogStatusFilter, setAiLogStatusFilter] = useState<AiLogStatusFilter>('all');
+  const [selectedScanLogId, setSelectedScanLogId] = useState<string | null>(null);
+  const [aiLogError, setAiLogError] = useState('');
+  const [relabelCategoryId, setRelabelCategoryId] = useState('');
+  const [relabelNotes, setRelabelNotes] = useState('');
+  const [isSavingAiLog, setIsSavingAiLog] = useState(false);
+  const [feedbackSearch, setFeedbackSearch] = useState('');
+  const [feedbackStatusFilter, setFeedbackStatusFilter] = useState<FeedbackStatusFilter>('all');
+  const [feedbackTypeFilter, setFeedbackTypeFilter] = useState<FeedbackTypeFilter>('all');
+  const [selectedFeedbackId, setSelectedFeedbackId] = useState<string | null>(null);
+  const [feedbackResponse, setFeedbackResponse] = useState('');
+  const [feedbackInternalNotes, setFeedbackInternalNotes] = useState('');
+  const [feedbackDetailStatus, setFeedbackDetailStatus] = useState<Exclude<FeedbackStatusFilter, 'all'>>('resolved');
+  const [feedbackError, setFeedbackError] = useState('');
+  const [isSavingFeedback, setIsSavingFeedback] = useState(false);
+  const [showForwardDevModal, setShowForwardDevModal] = useState(false);
+  const [forwardPriority, setForwardPriority] = useState<FeedbackPriority>('high');
+  const [forwardRelatedModule, setForwardRelatedModule] = useState('Other');
+  const [forwardTechnicalNotes, setForwardTechnicalNotes] = useState('');
+  const [isForwardingFeedback, setIsForwardingFeedback] = useState(false);
+  const [previewAttachmentUrl, setPreviewAttachmentUrl] = useState<string | null>(null);
 
   const loadDashboardData = useCallback(async () => {
     setIsDashboardLoading(true);
@@ -859,8 +1065,11 @@ export default function AdminApp() {
     try {
       const [
         authUsers,
+        categories,
         profiles,
         transactions,
+        receipts,
+        receiptImages,
         scans,
         ocrResults,
         recommendationRuns,
@@ -872,8 +1081,11 @@ export default function AdminApp() {
         notificationSettings,
       ] = await Promise.all([
         withRequestLabel('get_admin_auth_users', supabase.rpc('get_admin_auth_users')),
+        withRequestLabel('categories.select', supabase.from('categories').select('*')),
         withRequestLabel('user_profiles.select', supabase.from('user_profiles').select('*')),
         withRequestLabel('transactions.select', supabase.from('transactions').select('*')),
+        withRequestLabel('receipts.select', supabase.from('receipts').select('*')),
+        withRequestLabel('receipt_images.select', supabase.from('receipt_images').select('*')),
         withRequestLabel('scan_logs.select', supabase.from('scan_logs').select('*')),
         withRequestLabel('ocr_results.select', supabase.from('ocr_results').select('*')),
         withRequestLabel('recommendation_runs.select', supabase.from('recommendation_runs').select('*')),
@@ -887,8 +1099,11 @@ export default function AdminApp() {
 
       const failedResponse = [
         { label: 'get_admin_auth_users', error: authUsers.error },
+        { label: 'categories.select', error: categories.error },
         { label: 'user_profiles.select', error: profiles.error },
         { label: 'transactions.select', error: transactions.error },
+        { label: 'receipts.select', error: receipts.error },
+        { label: 'receipt_images.select', error: receiptImages.error },
         { label: 'scan_logs.select', error: scans.error },
         { label: 'ocr_results.select', error: ocrResults.error },
         { label: 'recommendation_runs.select', error: recommendationRuns.error },
@@ -905,8 +1120,11 @@ export default function AdminApp() {
 
       setDashboardData({
         authUsers: normalizeAuthUsers(authUsers.data ?? []),
+        categories: categories.data ?? [],
         profiles: profiles.data ?? [],
         transactions: transactions.data ?? [],
+        receipts: receipts.data ?? [],
+        receiptImages: receiptImages.data ?? [],
         scans: scans.data ?? [],
         ocrResults: ocrResults.data ?? [],
         recommendationRuns: recommendationRuns.data ?? [],
@@ -994,8 +1212,11 @@ export default function AdminApp() {
     if (authState !== 'authenticated') return;
 
     const tables = [
+      'categories',
       'user_profiles',
       'transactions',
+      'receipts',
+      'receipt_images',
       'scan_logs',
       'ocr_results',
       'recommendation_runs',
@@ -1038,6 +1259,7 @@ export default function AdminApp() {
       isWithinRange(run.started_at, start, end) || isWithinRange(run.completed_at, start, end)
     );
     const failedScans = monthScans.filter(isFailedScan);
+    const unreviewedScanErrors = failedScans.filter((scan) => !scan.is_reviewed).length;
     const activeUsers = getUniqueActiveUsers(dashboardData.transactions, dashboardData.scans, dashboardData.profiles, start, end);
     const previousActiveUsers = getUniqueActiveUsers(
       dashboardData.transactions,
@@ -1062,6 +1284,7 @@ export default function AdminApp() {
 
     const ocrDurations = monthScans
       .map((scan) => {
+        if (scan.processing_time_ms != null) return scan.processing_time_ms;
         const matchedOcr = dashboardData.ocrResults.find((ocr) => ocr.receipt_id === scan.receipt_id);
         return getDurationMs(scan.created_at, matchedOcr?.processed_at);
       })
@@ -1079,6 +1302,9 @@ export default function AdminApp() {
     const pendingFeedbacks = dashboardData.feedbacks.filter(
       (feedback) => !isBugFeedback(feedback) && isPendingStatus(feedback.status)
     ).length;
+    const pendingFeedbackQueue = dashboardData.feedbacks.filter(
+      (feedback) => isPendingStatus(feedback.status)
+    ).length;
     const unresolvedBugs = dashboardData.feedbacks.filter(
       (feedback) => isBugFeedback(feedback) && !isResolvedStatus(feedback.status)
     ).length;
@@ -1091,6 +1317,7 @@ export default function AdminApp() {
       totalTransactions: monthTransactions.length,
       totalScanLogs: monthScans.length,
       failedScans: failedScans.length,
+      unreviewedScanErrors,
       successRate: monthScans.length > 0 ? ((monthScans.length - failedScans.length) / monthScans.length) * 100 : 0,
       averageAiProcessingMs,
       manualTransactions,
@@ -1100,6 +1327,7 @@ export default function AdminApp() {
         .sort((a, b) => b.value - a.value)
         .slice(0, 6),
       pendingFeedbacks,
+      pendingFeedbackQueue,
       unresolvedBugs,
     };
   }, [dashboardData, selectedMonth, selectedYear]);
@@ -1180,6 +1408,187 @@ export default function AdminApp() {
     return new Map(entries);
   }, [dashboardData.profiles]);
 
+  const authUserById = useMemo(() => {
+    const entries = dashboardData.authUsers.map((authUser) => [authUser.uid, authUser] as const);
+    return new Map(entries);
+  }, [dashboardData.authUsers]);
+
+  const categoryById = useMemo(() => {
+    const entries = dashboardData.categories.map((category) => [category.category_id, category] as const);
+    return new Map(entries);
+  }, [dashboardData.categories]);
+
+  const receiptById = useMemo(() => {
+    const entries = dashboardData.receipts.map((receipt) => [receipt.receipt_id, receipt] as const);
+    return new Map(entries);
+  }, [dashboardData.receipts]);
+
+  const receiptImageById = useMemo(() => {
+    const entries = dashboardData.receiptImages.map((receiptImage) => [receiptImage.receipt_image_id, receiptImage] as const);
+    return new Map(entries);
+  }, [dashboardData.receiptImages]);
+
+  const transactionByReceiptId = useMemo(() => {
+    const entries = dashboardData.transactions
+      .filter((transaction) => Boolean(transaction.receipt_id))
+      .map((transaction) => [transaction.receipt_id as string, transaction] as const);
+    return new Map(entries);
+  }, [dashboardData.transactions]);
+
+  const ocrResultByReceiptId = useMemo(() => {
+    const entries = dashboardData.ocrResults.map((ocrResult) => [ocrResult.receipt_id, ocrResult] as const);
+    return new Map(entries);
+  }, [dashboardData.ocrResults]);
+
+  const relabelCategoryOptions = useMemo(() => dashboardData.categories
+    .filter((category) => category.type === 'expense' && category.is_active)
+    .sort((a, b) => Number(b.is_default) - Number(a.is_default) || a.name.localeCompare(b.name, 'vi')), [dashboardData.categories]);
+
+  const aiLogRows = useMemo(() => dashboardData.scans
+    .map((scan) => {
+      const profile = profileByUserId.get(scan.user_id);
+      const authUser = authUserById.get(scan.user_id);
+      const matchedReceipt = scan.receipt_id ? receiptById.get(scan.receipt_id) : null;
+      const matchedReceiptImage = matchedReceipt?.receipt_image_id ? receiptImageById.get(matchedReceipt.receipt_image_id) : null;
+      const matchedTransaction = scan.receipt_id ? transactionByReceiptId.get(scan.receipt_id) : null;
+      const matchedOcr = scan.receipt_id ? ocrResultByReceiptId.get(scan.receipt_id) : null;
+      const extractedFields = scan.extracted_fields || matchedOcr?.extracted_fields || null;
+      const suggestedCategory = scan.suggested_category_id ? categoryById.get(scan.suggested_category_id) : null;
+      const finalCategory = scan.final_category_id ? categoryById.get(scan.final_category_id) : null;
+      const extractedCategoryName = getJsonStringField(extractedFields, ['categoryName', 'category_name', 'category', 'suggestedCategory']);
+      const confidencePercent = normalizeConfidencePercent(scan.confidence_score);
+      const processingTimeMs = scan.processing_time_ms ?? getDurationMs(scan.created_at, matchedOcr?.processed_at) ?? 0;
+      const failed = isFailedScan(scan);
+      const reviewed = Boolean(scan.is_reviewed || scan.reviewed_at);
+
+      return {
+        ...scan,
+        displayCode: getScanDisplayCode(scan.scan_log_id),
+        userName: profile?.full_name || authUser?.display_name || 'Chưa cập nhật',
+        userEmail: authUser?.email || '',
+        transactionId: matchedTransaction?.transaction_id || null,
+        receiptImageUrl: scan.raw_receipt_image_url || matchedReceiptImage?.storage_url || null,
+        rawOcrText: scan.raw_text || matchedOcr?.raw_text || '',
+        extractedFields,
+        suggestedCategoryLabel: suggestedCategory?.name || extractedCategoryName || 'Chưa xác định',
+        finalCategoryLabel: finalCategory?.name || null,
+        categoryLabel: finalCategory?.name || suggestedCategory?.name || extractedCategoryName || 'Chưa xác định',
+        confidencePercent,
+        confidenceLabel: getConfidenceLabel(scan.confidence_score),
+        processingTimeMs,
+        failed,
+        reviewed,
+        statusLabel: getScanStatusLabel(scan),
+        reviewLabel: getReviewLabel(reviewed),
+        ocrConfidence: matchedOcr?.confidence ?? null,
+      };
+    })
+    .sort((a, b) => (parseTimestampMs(b.created_at) ?? 0) - (parseTimestampMs(a.created_at) ?? 0)), [
+      authUserById,
+      categoryById,
+      dashboardData.scans,
+      ocrResultByReceiptId,
+      profileByUserId,
+      receiptById,
+      receiptImageById,
+      transactionByReceiptId,
+    ]);
+
+  const filteredAiLogRows = useMemo(() => {
+    const keyword = aiLogSearch.trim().toLowerCase();
+
+    return aiLogRows.filter((row) => {
+      const matchesKeyword = !keyword ||
+        row.displayCode.toLowerCase().includes(keyword) ||
+        row.scan_log_id.toLowerCase().includes(keyword) ||
+        (row.transactionId || '').toLowerCase().includes(keyword) ||
+        (row.receipt_id || '').toLowerCase().includes(keyword) ||
+        row.user_id.toLowerCase().includes(keyword) ||
+        row.userName.toLowerCase().includes(keyword) ||
+        row.userEmail.toLowerCase().includes(keyword) ||
+        row.categoryLabel.toLowerCase().includes(keyword) ||
+        (row.error_code || '').toLowerCase().includes(keyword) ||
+        (row.error_message || '').toLowerCase().includes(keyword);
+      const matchesStatus =
+        aiLogStatusFilter === 'all' ||
+        (aiLogStatusFilter === 'success' && !row.failed) ||
+        (aiLogStatusFilter === 'failed' && row.failed) ||
+        (aiLogStatusFilter === 'reviewed' && row.reviewed) ||
+        (aiLogStatusFilter === 'unreviewed' && !row.reviewed);
+
+      return matchesKeyword && matchesStatus;
+    });
+  }, [aiLogRows, aiLogSearch, aiLogStatusFilter]);
+
+  const aiLogMetrics = useMemo(() => {
+    const durations = aiLogRows
+      .map((row) => row.processingTimeMs)
+      .filter((duration): duration is number => Number.isFinite(duration) && duration > 0);
+
+    return {
+      total: aiLogRows.length,
+      averageConfidence: getAverageConfidence(aiLogRows.map((row) => row.confidencePercent)),
+      averageProcessingMs: durations.length > 0 ? durations.reduce((sum, duration) => sum + duration, 0) / durations.length : 0,
+      unreviewedErrors: aiLogRows.filter((row) => row.failed && !row.reviewed).length,
+    };
+  }, [aiLogRows]);
+
+  const selectedAiLog = useMemo(
+    () => aiLogRows.find((row) => row.scan_log_id === selectedScanLogId) ?? null,
+    [aiLogRows, selectedScanLogId]
+  );
+
+  const feedbackRows = useMemo(() => dashboardData.feedbacks
+    .map((feedback) => {
+      const profile = profileByUserId.get(feedback.user_id);
+      const authUser = authUserById.get(feedback.user_id);
+      const status = normalizeFeedbackStatus(feedback.status);
+      const feedbackType = getFeedbackType(feedback);
+      const userEmail = feedback.user_email || authUser?.email || '';
+
+      return {
+        ...feedback,
+        status,
+        feedbackType,
+        categoryLabel: getFeedbackCategoryLabel(feedback.category),
+        displayCode: getFeedbackDisplayCode(feedback.feedback_id),
+        userEmail,
+        userName: profile?.full_name || authUser?.display_name || 'Chưa cập nhật',
+        hasAttachment: Boolean(feedback.attachment_url),
+      };
+    })
+    .sort((a, b) => (parseTimestampMs(b.created_at) ?? 0) - (parseTimestampMs(a.created_at) ?? 0)), [authUserById, dashboardData.feedbacks, profileByUserId]);
+
+  const filteredFeedbackRows = useMemo(() => {
+    const keyword = feedbackSearch.trim().toLowerCase();
+
+    return feedbackRows.filter((row) => {
+      const matchesKeyword = !keyword ||
+        row.displayCode.toLowerCase().includes(keyword) ||
+        row.subject.toLowerCase().includes(keyword) ||
+        row.content.toLowerCase().includes(keyword) ||
+        row.category.toLowerCase().includes(keyword) ||
+        row.userEmail.toLowerCase().includes(keyword) ||
+        row.user_id.toLowerCase().includes(keyword);
+      const matchesStatus = feedbackStatusFilter === 'all' || row.status === feedbackStatusFilter;
+      const matchesType = feedbackTypeFilter === 'all' || row.feedbackType === feedbackTypeFilter;
+
+      return matchesKeyword && matchesStatus && matchesType;
+    });
+  }, [feedbackRows, feedbackSearch, feedbackStatusFilter, feedbackTypeFilter]);
+
+  const feedbackMetrics = useMemo(() => ({
+    pending: feedbackRows.filter((row) => row.status === 'pending').length,
+    inProgress: feedbackRows.filter((row) => row.status === 'in_progress').length,
+    resolved: feedbackRows.filter((row) => row.status === 'resolved' || row.status === 'closed').length,
+    critical: feedbackRows.filter((row) => (row.priority || '').toLowerCase() === 'critical').length,
+  }), [feedbackRows]);
+
+  const selectedFeedback = useMemo(
+    () => feedbackRows.find((row) => row.feedback_id === selectedFeedbackId) ?? null,
+    [feedbackRows, selectedFeedbackId]
+  );
+
   const navigateAdminSection = useCallback((section: AdminSection) => {
     setActiveSection(section);
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -1187,10 +1596,193 @@ export default function AdminApp() {
         ? '/admin/users'
         : section === 'notifications'
           ? '/admin/notifications'
+          : section === 'ai_logs'
+            ? '/admin/ai-logs'
+          : section === 'feedback'
+            ? '/admin/feedback'
           : '/admin';
       window.history.pushState({}, '', path);
     }
   }, []);
+
+  const openAiLogDetail = useCallback((row: any) => {
+    setAiLogError('');
+    setSelectedScanLogId(row.scan_log_id);
+    setRelabelCategoryId(row.final_category_id || row.suggested_category_id || '');
+    setRelabelNotes(row.relabel_notes || '');
+  }, []);
+
+  const handleSaveAiLogReview = useCallback(async () => {
+    if (!selectedAiLog || !adminProfile) return;
+
+    setIsSavingAiLog(true);
+    setAiLogError('');
+    try {
+      const nowIso = new Date().toISOString();
+      const updatePayload: Database['public']['Tables']['scan_logs']['Update'] = {
+        is_reviewed: true,
+        reviewed_at: nowIso,
+        reviewed_by: adminProfile.user_id,
+        relabeled_category_id: relabelCategoryId || null,
+        relabel_notes: relabelNotes.trim() || null,
+        final_category_id: relabelCategoryId || selectedAiLog.final_category_id,
+        status: selectedAiLog.failed ? 'resolved' : selectedAiLog.status,
+      };
+
+      const { error: updateError } = await supabase
+        .from('scan_logs')
+        .update(updatePayload)
+        .eq('scan_log_id', selectedAiLog.scan_log_id);
+
+      if (updateError) throw updateError;
+
+      const { error: auditError } = await supabase
+        .from('audit_logs')
+        .insert({
+          admin_id: adminProfile.user_id,
+          action: 'REVIEW_AI_SCAN_LOG',
+          target_type: 'scan_log',
+          target_id: selectedAiLog.scan_log_id,
+          metadata: {
+            user_id: selectedAiLog.user_id,
+            previous_status: selectedAiLog.status,
+            relabeled_category_id: relabelCategoryId || null,
+            relabel_notes: relabelNotes.trim() || null,
+            error_code: selectedAiLog.error_code,
+          },
+        });
+
+      if (auditError) throw auditError;
+
+      setSelectedScanLogId(null);
+      setRelabelCategoryId('');
+      setRelabelNotes('');
+      await loadDashboardData();
+    } catch (error: any) {
+      setAiLogError(error?.message || 'Không thể cập nhật nhật ký AI.');
+    } finally {
+      setIsSavingAiLog(false);
+    }
+  }, [adminProfile, loadDashboardData, relabelCategoryId, relabelNotes, selectedAiLog]);
+
+  const resetForwardDevForm = useCallback(() => {
+    setForwardPriority('high');
+    setForwardRelatedModule('Other');
+    setForwardTechnicalNotes('');
+  }, []);
+
+  const openFeedbackDetail = useCallback((row: any) => {
+    setFeedbackError('');
+    setSelectedFeedbackId(row.feedback_id);
+    setFeedbackResponse(row.admin_response || '');
+    setFeedbackInternalNotes(row.internal_notes || '');
+    setFeedbackDetailStatus(row.status === 'closed' ? 'closed' : row.status === 'in_progress' ? 'in_progress' : 'resolved');
+    setForwardPriority((row.priority || 'high') as FeedbackPriority);
+    setForwardRelatedModule(row.related_module || 'Other');
+    setForwardTechnicalNotes(row.technical_notes || '');
+  }, []);
+
+  const handleSubmitFeedbackResponse = useCallback(async () => {
+    if (!selectedFeedback || !adminProfile) return;
+
+    const response = feedbackResponse.trim();
+    if (!response) {
+      setFeedbackError('Vui lòng nhập phản hồi của Admin trước khi lưu.');
+      return;
+    }
+
+    setIsSavingFeedback(true);
+    setFeedbackError('');
+    try {
+      const nowIso = new Date().toISOString();
+      const { error: updateError } = await supabase
+        .from('feedbacks')
+        .update({
+          status: feedbackDetailStatus,
+          admin_response: response,
+          internal_notes: feedbackInternalNotes.trim() || null,
+          responded_at: nowIso,
+          responded_by: adminProfile.user_id,
+        })
+        .eq('feedback_id', selectedFeedback.feedback_id);
+
+      if (updateError) throw updateError;
+
+      const { error: notificationError } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: selectedFeedback.user_id,
+          type: 'feedback_response',
+          title: 'Phản hồi của bạn đã được xử lý',
+          body: `Đội ngũ hỗ trợ phản hồi góp ý "${selectedFeedback.subject}": ${response}`,
+          data: {
+            feedback_id: selectedFeedback.feedback_id,
+            status: feedbackDetailStatus,
+            admin_response: response,
+          },
+          campaign_id: null,
+        });
+
+      if (notificationError) throw notificationError;
+
+      const { error: auditError } = await supabase
+        .from('audit_logs')
+        .insert({
+          admin_id: adminProfile.user_id,
+          action: 'RESPOND_FEEDBACK',
+          target_type: 'feedback',
+          target_id: selectedFeedback.feedback_id,
+          metadata: {
+            status: feedbackDetailStatus,
+            user_id: selectedFeedback.user_id,
+          },
+        });
+
+      if (auditError) throw auditError;
+
+      setSelectedFeedbackId(null);
+      await loadDashboardData();
+    } catch (error: any) {
+      setFeedbackError(error?.message || 'Không thể cập nhật phản hồi do lỗi kết nối.');
+    } finally {
+      setIsSavingFeedback(false);
+    }
+  }, [adminProfile, feedbackDetailStatus, feedbackInternalNotes, feedbackResponse, loadDashboardData, selectedFeedback]);
+
+  const handleForwardFeedbackToDev = useCallback(async () => {
+    if (!selectedFeedback) return;
+
+    const notes = forwardTechnicalNotes.trim();
+    if (!notes) {
+      setFeedbackError('Vui lòng nhập ghi chú kỹ thuật trước khi chuyển cho Dev Team.');
+      return;
+    }
+
+    setIsForwardingFeedback(true);
+    setFeedbackError('');
+    try {
+      const { data, error } = await supabase.functions.invoke('forward-feedback-dev', {
+        body: {
+          feedbackId: selectedFeedback.feedback_id,
+          priority: forwardPriority,
+          relatedModule: forwardRelatedModule,
+          technicalNotes: notes,
+        },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      setShowForwardDevModal(false);
+      setSelectedFeedbackId(null);
+      resetForwardDevForm();
+      await loadDashboardData();
+    } catch (error: any) {
+      setFeedbackError(error?.message || 'Không thể chuyển phản hồi cho Dev Team.');
+    } finally {
+      setIsForwardingFeedback(false);
+    }
+  }, [forwardPriority, forwardRelatedModule, forwardTechnicalNotes, loadDashboardData, resetForwardDevForm, selectedFeedback]);
 
   const openUserDetail = useCallback((row: UserManagementRow) => {
     setUserActionError('');
@@ -1704,8 +2296,8 @@ export default function AdminApp() {
           <SidebarItem icon="home" label="Tổng quan" active={activeSection === 'dashboard'} onPress={() => navigateAdminSection('dashboard')} />
           <SidebarItem icon="people-outline" label="Người dùng" active={activeSection === 'users'} onPress={() => navigateAdminSection('users')} />
           <SidebarItem icon="megaphone-outline" label="Thông báo" active={activeSection === 'notifications'} onPress={() => navigateAdminSection('notifications')} />
-          <SidebarItem icon="scan-outline" label="Nhật ký AI" />
-          <SidebarItem icon="chatbubble-ellipses-outline" label="Góp ý" />
+          <SidebarItem icon="scan-outline" label="Nhật ký AI" active={activeSection === 'ai_logs'} onPress={() => navigateAdminSection('ai_logs')} />
+          <SidebarItem icon="chatbubble-ellipses-outline" label="Góp ý" active={activeSection === 'feedback'} onPress={() => navigateAdminSection('feedback')} />
           <SidebarItem icon="document-text-outline" label="Kiểm toán" />
           <SidebarItem icon="pulse-outline" label="Sức khỏe" />
           <SidebarItem icon="settings-outline" label="Cài đặt" />
@@ -1734,6 +2326,49 @@ export default function AdminApp() {
               getCampaignStatusLabel={getCampaignStatusLabel}
               getCampaignSentAt={getCampaignSentAt}
               getNotificationTypeLabel={getNotificationTypeLabel}
+            />
+          ) : activeSection === 'ai_logs' ? (
+            <AILogsPage
+              styles={styles}
+              ADMIN_COLORS={ADMIN_COLORS}
+              aiLogError={aiLogError}
+              aiLogSearch={aiLogSearch}
+              setAiLogSearch={setAiLogSearch}
+              aiLogStatusFilter={aiLogStatusFilter}
+              setAiLogStatusFilter={setAiLogStatusFilter}
+              aiLogRows={aiLogRows}
+              filteredAiLogRows={filteredAiLogRows}
+              aiLogMetrics={aiLogMetrics}
+              openAiLogDetail={openAiLogDetail}
+              loadDashboardData={loadDashboardData}
+              MetricCard={MetricCard}
+              formatNumber={formatNumber}
+              formatDateTime={formatDateTime}
+              formatDuration={formatDuration}
+              maskEmail={maskEmail}
+            />
+          ) : activeSection === 'feedback' ? (
+            <FeedbackPage
+              styles={styles}
+              ADMIN_COLORS={ADMIN_COLORS}
+              feedbackError={feedbackError}
+              feedbackSearch={feedbackSearch}
+              setFeedbackSearch={setFeedbackSearch}
+              feedbackStatusFilter={feedbackStatusFilter}
+              setFeedbackStatusFilter={setFeedbackStatusFilter}
+              feedbackTypeFilter={feedbackTypeFilter}
+              setFeedbackTypeFilter={setFeedbackTypeFilter}
+              feedbackRows={feedbackRows}
+              filteredFeedbackRows={filteredFeedbackRows}
+              feedbackMetrics={feedbackMetrics}
+              openFeedbackDetail={openFeedbackDetail}
+              MetricCard={MetricCard}
+              formatNumber={formatNumber}
+              formatDateTime={formatDateTime}
+              maskEmail={maskEmail}
+              getFeedbackStatusLabel={getFeedbackStatusLabel}
+              getFeedbackTypeLabel={getFeedbackTypeLabel}
+              getFeedbackPriorityLabel={getFeedbackPriorityLabel}
             />
           ) : activeSection === 'users' ? (
             <UsersPage
@@ -1979,6 +2614,375 @@ export default function AdminApp() {
                 </>
               ) : null}
             </View>
+          </View>
+        </Modal>
+
+        <Modal visible={Boolean(selectedAiLog)} transparent animationType="fade" onRequestClose={() => setSelectedScanLogId(null)}>
+          <View style={styles.drawerBackdrop}>
+            <View style={styles.aiLogDrawer}>
+              {selectedAiLog ? (
+                <>
+                  <View style={styles.drawerHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.drawerTitle}>Chi tiết nhật ký AI: {selectedAiLog.displayCode}</Text>
+                      <Text style={styles.drawerSubtitle}>{selectedAiLog.userName} • {selectedAiLog.userEmail || selectedAiLog.user_id}</Text>
+                      <View style={styles.drawerStatusRow}>
+                        <View style={[styles.statusPill, selectedAiLog.failed ? styles.statusPillInactive : styles.statusPillActive]}>
+                          <Text style={[styles.statusPillText, selectedAiLog.failed ? styles.statusTextInactive : styles.statusTextActive]}>
+                            {selectedAiLog.statusLabel}
+                          </Text>
+                        </View>
+                        <Text style={styles.drawerRole}>{selectedAiLog.reviewLabel}</Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity style={styles.drawerCloseButton} onPress={() => setSelectedScanLogId(null)}>
+                      <Ionicons name="close" size={22} color={ADMIN_COLORS.text} />
+                    </TouchableOpacity>
+                  </View>
+
+                  <ScrollView style={styles.drawerScroll} contentContainerStyle={styles.drawerContent}>
+                    {aiLogError ? (
+                      <View style={styles.errorBanner}>
+                        <Ionicons name="warning" size={18} color={ADMIN_COLORS.error} />
+                        <Text style={styles.errorText}>{aiLogError}</Text>
+                      </View>
+                    ) : null}
+
+                    <View style={styles.drawerMetricsGrid}>
+                      <View style={styles.drawerMetricCard}>
+                        <Text style={styles.drawerMetricValue}>{selectedAiLog.confidenceLabel}</Text>
+                        <Text style={styles.drawerMetricLabel}>Độ chính xác</Text>
+                      </View>
+                      <View style={styles.drawerMetricCard}>
+                        <Text style={styles.drawerMetricValue}>{formatDuration(selectedAiLog.processingTimeMs)}</Text>
+                        <Text style={styles.drawerMetricLabel}>Thời gian xử lý</Text>
+                      </View>
+                      <View style={styles.drawerMetricCard}>
+                        <Text style={styles.drawerMetricValue}>{selectedAiLog.reviewed ? 'Có' : 'Chưa'}</Text>
+                        <Text style={styles.drawerMetricLabel}>Đã kiểm tra</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.detailGrid}>
+                      <View style={styles.detailCard}>
+                        <Text style={styles.detailLabel}>Scan log ID</Text>
+                        <Text style={styles.detailValue}>{selectedAiLog.scan_log_id}</Text>
+                      </View>
+                      <View style={styles.detailCard}>
+                        <Text style={styles.detailLabel}>Transaction ID</Text>
+                        <Text style={styles.detailValue}>{selectedAiLog.transactionId || 'Chưa liên kết giao dịch'}</Text>
+                      </View>
+                      <View style={styles.detailCard}>
+                        <Text style={styles.detailLabel}>Receipt ID</Text>
+                        <Text style={styles.detailValue}>{selectedAiLog.receipt_id || 'Chưa có receipt'}</Text>
+                      </View>
+                      <View style={styles.detailCard}>
+                        <Text style={styles.detailLabel}>Ngày quét</Text>
+                        <Text style={styles.detailValue}>{formatDateTime(selectedAiLog.created_at)}</Text>
+                      </View>
+                      <View style={styles.detailCard}>
+                        <Text style={styles.detailLabel}>Danh mục AI đề xuất</Text>
+                        <Text style={styles.detailValue}>{selectedAiLog.suggestedCategoryLabel}</Text>
+                      </View>
+                      <View style={styles.detailCard}>
+                        <Text style={styles.detailLabel}>Danh mục sau kiểm tra</Text>
+                        <Text style={styles.detailValue}>{selectedAiLog.finalCategoryLabel || 'Chưa relabel'}</Text>
+                      </View>
+                    </View>
+
+                    <View style={[styles.detailCard, styles.feedbackDetailFullCard]}>
+                      <Text style={styles.detailLabel}>Ảnh biên lai gốc</Text>
+                      {selectedAiLog.receiptImageUrl ? (
+                        <TouchableOpacity style={styles.aiLogReceiptPreview} onPress={() => setPreviewAttachmentUrl(selectedAiLog.receiptImageUrl)}>
+                          <Image source={{ uri: selectedAiLog.receiptImageUrl }} style={styles.aiLogReceiptImage} resizeMode="contain" />
+                          <Text style={styles.feedbackAttachmentLink}>Nhấn để xem phóng to</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <Text style={styles.detailValue}>Chưa có URL ảnh biên lai. Hãy chạy migration UC17 và quét lại để log lưu ảnh.</Text>
+                      )}
+                    </View>
+
+                    <View style={[styles.detailCard, styles.feedbackDetailFullCard]}>
+                      <Text style={styles.detailLabel}>OCR text / Chuỗi nhận dạng</Text>
+                      <Text style={styles.detailValue}>{selectedAiLog.rawOcrText || 'Chưa có raw OCR text.'}</Text>
+                    </View>
+
+                    <View style={[styles.detailCard, styles.feedbackDetailFullCard]}>
+                      <Text style={styles.detailLabel}>Dữ liệu AI trích xuất</Text>
+                      <Text style={styles.detailValue}>
+                        {selectedAiLog.extractedFields ? JSON.stringify(selectedAiLog.extractedFields, null, 2) : 'Chưa có extracted_fields.'}
+                      </Text>
+                    </View>
+
+                    {selectedAiLog.error_code || selectedAiLog.error_message ? (
+                      <View style={[styles.detailCard, styles.feedbackDetailFullCard]}>
+                        <Text style={styles.detailLabel}>Mã lỗi / Nội dung lỗi</Text>
+                        <Text style={styles.detailValue}>{selectedAiLog.error_code || 'NO_CODE'}</Text>
+                        <Text style={styles.detailHint}>{selectedAiLog.error_message || 'Không có mô tả lỗi.'}</Text>
+                      </View>
+                    ) : null}
+
+                    <Text style={styles.drawerSectionTitle}>Relabel Data</Text>
+                    <Text style={styles.detailHint}>Nếu AI phân loại sai, chọn danh mục đúng rồi lưu. Hành động sẽ đánh dấu log là đã kiểm tra và ghi audit log theo UC17.</Text>
+                    <View style={styles.statusFilterGroup}>
+                      {relabelCategoryOptions.map((category) => (
+                        <TouchableOpacity
+                          key={category.category_id}
+                          style={[styles.statusFilterButton, relabelCategoryId === category.category_id && styles.statusFilterButtonActive]}
+                          onPress={() => setRelabelCategoryId(category.category_id)}
+                        >
+                          <Text style={[styles.statusFilterText, relabelCategoryId === category.category_id && styles.statusFilterTextActive]}>{category.name}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    <Text style={styles.inputLabel}>Ghi chú kiểm tra</Text>
+                    <TextInput
+                      style={[styles.adminFormInput, styles.feedbackTextarea]}
+                      value={relabelNotes}
+                      onChangeText={setRelabelNotes}
+                      placeholder="Ví dụ: AI gán sai danh mục, ảnh mờ, không đọc được tổng tiền..."
+                      placeholderTextColor={ADMIN_COLORS.muted}
+                      multiline
+                      textAlignVertical="top"
+                    />
+
+                    <View style={styles.editUserActions}>
+                      <TouchableOpacity style={styles.cancelButton} onPress={() => setSelectedScanLogId(null)}>
+                        <Text style={styles.cancelButtonText}>Đóng</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.saveAdminButton, isSavingAiLog && styles.disabledButton]} onPress={handleSaveAiLogReview} disabled={isSavingAiLog}>
+                        {isSavingAiLog ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveAdminButtonText}>Lưu kiểm tra</Text>}
+                      </TouchableOpacity>
+                    </View>
+                  </ScrollView>
+                </>
+              ) : null}
+            </View>
+          </View>
+        </Modal>
+
+        <Modal visible={Boolean(selectedFeedback)} transparent animationType="fade" onRequestClose={() => setSelectedFeedbackId(null)}>
+          <View style={styles.drawerBackdrop}>
+            <View style={styles.feedbackDrawer}>
+              {selectedFeedback ? (
+                <>
+                  <View style={styles.drawerHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.drawerTitle}>Chi tiết phản hồi: {selectedFeedback.displayCode}</Text>
+                      <Text style={styles.drawerSubtitle}>{selectedFeedback.subject}</Text>
+                      <View style={styles.drawerStatusRow}>
+                        <View style={[styles.statusPill, selectedFeedback.status === 'resolved' || selectedFeedback.status === 'closed' ? styles.statusPillActive : styles.statusPillInactive]}>
+                          <Text style={[styles.statusPillText, selectedFeedback.status === 'resolved' || selectedFeedback.status === 'closed' ? styles.statusTextActive : styles.statusTextInactive]}>
+                            {getFeedbackStatusLabel(selectedFeedback.status)}
+                          </Text>
+                        </View>
+                        <Text style={styles.drawerRole}>{getFeedbackPriorityLabel(selectedFeedback.priority)}</Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity style={styles.drawerCloseButton} onPress={() => setSelectedFeedbackId(null)}>
+                      <Ionicons name="close" size={22} color={ADMIN_COLORS.text} />
+                    </TouchableOpacity>
+                  </View>
+
+                  <ScrollView style={styles.drawerScroll} contentContainerStyle={styles.drawerContent}>
+                    {feedbackError ? (
+                      <View style={styles.errorBanner}>
+                        <Ionicons name="warning" size={18} color={ADMIN_COLORS.error} />
+                        <Text style={styles.errorText}>{feedbackError}</Text>
+                      </View>
+                    ) : null}
+
+                    <View style={styles.detailGrid}>
+                      <View style={styles.detailCard}>
+                        <Text style={styles.detailLabel}>Mã phản hồi</Text>
+                        <Text style={styles.detailValue}>{selectedFeedback.feedback_id}</Text>
+                      </View>
+                      <View style={styles.detailCard}>
+                        <Text style={styles.detailLabel}>User ID</Text>
+                        <Text style={styles.detailValue}>{selectedFeedback.user_id}</Text>
+                      </View>
+                      <View style={styles.detailCard}>
+                        <Text style={styles.detailLabel}>Email người dùng</Text>
+                        <Text style={styles.detailValue}>{selectedFeedback.userEmail || 'Chưa có email'}</Text>
+                      </View>
+                      <View style={styles.detailCard}>
+                        <Text style={styles.detailLabel}>Thời gian gửi</Text>
+                        <Text style={styles.detailValue}>{formatDateTime(selectedFeedback.created_at)}</Text>
+                      </View>
+                      <View style={styles.detailCard}>
+                        <Text style={styles.detailLabel}>Danh mục</Text>
+                        <Text style={styles.detailValue}>{selectedFeedback.categoryLabel}</Text>
+                      </View>
+                      <View style={styles.detailCard}>
+                        <Text style={styles.detailLabel}>Loại</Text>
+                        <Text style={styles.detailValue}>{getFeedbackTypeLabel(selectedFeedback.feedbackType)}</Text>
+                      </View>
+                      <View style={styles.detailCard}>
+                        <Text style={styles.detailLabel}>Ưu tiên</Text>
+                        <Text style={styles.detailValue}>{getFeedbackPriorityLabel(selectedFeedback.priority)}</Text>
+                        <Text style={styles.detailHint}>{getFeedbackPriorityReason(selectedFeedback)}</Text>
+                      </View>
+                    </View>
+
+                    <View style={[styles.detailCard, styles.feedbackDetailFullCard]}>
+                      <Text style={styles.detailLabel}>Mô tả từ người dùng</Text>
+                      <Text style={styles.detailValue}>{selectedFeedback.content}</Text>
+                    </View>
+
+                    <View style={[styles.detailCard, styles.feedbackDetailFullCard]}>
+                      <Text style={styles.detailLabel}>Ảnh đính kèm</Text>
+                      {selectedFeedback.attachment_url ? (
+                        <TouchableOpacity style={styles.feedbackAttachmentPreview} onPress={() => setPreviewAttachmentUrl(selectedFeedback.attachment_url)}>
+                          <View style={styles.feedbackAttachmentImageFrame}>
+                            <Image source={{ uri: selectedFeedback.attachment_url }} style={styles.feedbackAttachmentImage} resizeMode="contain" />
+                          </View>
+                          <Text style={styles.feedbackAttachmentLink}>Nhấn để xem phóng to</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <Text style={styles.detailValue}>Không có ảnh đính kèm.</Text>
+                      )}
+                    </View>
+
+                    {selectedFeedback.dev_tracking_id || selectedFeedback.dev_status ? (
+                      <View style={styles.detailCard}>
+                        <Text style={styles.detailLabel}>Theo dõi Dev Team</Text>
+                        <Text style={styles.detailValue}>Trạng thái: {selectedFeedback.dev_status || 'Chưa chuyển'}</Text>
+                        <Text style={styles.detailValue}>Tracking: {selectedFeedback.dev_tracking_id || 'Chưa có'}</Text>
+                        <Text style={styles.detailValue}>Email Dev: {selectedFeedback.dev_email || 'Chưa có'}</Text>
+                        <Text style={styles.detailValue}>Module: {selectedFeedback.related_module || 'Chưa chọn'}</Text>
+                      </View>
+                    ) : null}
+
+                    <Text style={styles.drawerSectionTitle}>Ghi chú nội bộ</Text>
+                    <TextInput
+                      style={[styles.adminFormInput, styles.feedbackTextarea]}
+                      value={feedbackInternalNotes}
+                      onChangeText={setFeedbackInternalNotes}
+                      placeholder="Ghi chú chỉ dành cho Admin..."
+                      placeholderTextColor={ADMIN_COLORS.muted}
+                      multiline
+                      textAlignVertical="top"
+                    />
+
+                    <Text style={styles.drawerSectionTitle}>Phản hồi cho người dùng *</Text>
+                    <TextInput
+                      style={[styles.adminFormInput, styles.feedbackTextarea]}
+                      value={feedbackResponse}
+                      onChangeText={setFeedbackResponse}
+                      placeholder="Nhập nội dung phản hồi bằng tiếng Việt..."
+                      placeholderTextColor={ADMIN_COLORS.muted}
+                      multiline
+                      textAlignVertical="top"
+                    />
+
+                    <Text style={styles.drawerSectionTitle}>Trạng thái sau khi lưu</Text>
+                    <View style={styles.statusFilterGroup}>
+                      {([
+                        ['in_progress', 'Đang xử lý'],
+                        ['resolved', 'Đã giải quyết'],
+                        ['closed', 'Đã đóng'],
+                      ] as [Exclude<FeedbackStatusFilter, 'all'>, string][]).map(([value, label]) => (
+                        <TouchableOpacity
+                          key={value}
+                          style={[styles.statusFilterButton, feedbackDetailStatus === value && styles.statusFilterButtonActive]}
+                          onPress={() => setFeedbackDetailStatus(value)}
+                        >
+                          <Text style={[styles.statusFilterText, feedbackDetailStatus === value && styles.statusFilterTextActive]}>{label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    <View style={styles.editUserActions}>
+                      <TouchableOpacity style={styles.cancelButton} onPress={() => setShowForwardDevModal(true)}>
+                        <Text style={styles.cancelButtonText}>Chuyển cho Dev Team</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.saveAdminButton, isSavingFeedback && styles.disabledButton]} onPress={handleSubmitFeedbackResponse} disabled={isSavingFeedback}>
+                        {isSavingFeedback ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveAdminButtonText}>Lưu phản hồi</Text>}
+                      </TouchableOpacity>
+                    </View>
+                  </ScrollView>
+                </>
+              ) : null}
+            </View>
+          </View>
+        </Modal>
+
+        <Modal visible={showForwardDevModal} transparent animationType="fade" onRequestClose={() => setShowForwardDevModal(false)}>
+          <View style={styles.modalBackdrop}>
+            <View style={styles.forwardDevModal}>
+              <View style={styles.editUserHeader}>
+                <Text style={styles.editUserTitle}>Chuyển báo cáo cho Dev Team</Text>
+                <TouchableOpacity onPress={() => setShowForwardDevModal(false)}>
+                  <Ionicons name="close" size={22} color={ADMIN_COLORS.text} />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.detailValue}>Email nhận trực tiếp: nguyentrinhtuanvan@gmail.com</Text>
+              {selectedFeedback ? (
+                <View style={styles.detailCard}>
+                  <Text style={styles.detailLabel}>Xác nhận phản hồi sẽ chuyển</Text>
+                  <Text style={styles.detailValue}>Mã: {selectedFeedback.displayCode}</Text>
+                  <Text style={styles.detailValue}>User: {selectedFeedback.user_id}</Text>
+                  <Text style={styles.detailValue}>Email: {selectedFeedback.userEmail || 'Chưa có email'}</Text>
+                  <Text style={styles.detailValue}>Tiêu đề: {selectedFeedback.subject}</Text>
+                </View>
+              ) : null}
+              <Text style={styles.inputLabel}>Module liên quan</Text>
+              <View style={styles.statusFilterGroup}>
+                {FEEDBACK_RELATED_MODULES.map((module) => (
+                  <TouchableOpacity
+                    key={module}
+                    style={[styles.statusFilterButton, forwardRelatedModule === module && styles.statusFilterButtonActive]}
+                    onPress={() => setForwardRelatedModule(module)}
+                  >
+                    <Text style={[styles.statusFilterText, forwardRelatedModule === module && styles.statusFilterTextActive]}>{module}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.inputLabel}>Mức độ ưu tiên</Text>
+              <View style={styles.statusFilterGroup}>
+                {FEEDBACK_PRIORITY_OPTIONS.map((option) => (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={[styles.statusFilterButton, forwardPriority === option.value && styles.statusFilterButtonActive]}
+                    onPress={() => setForwardPriority(option.value)}
+                  >
+                    <Text style={[styles.statusFilterText, forwardPriority === option.value && styles.statusFilterTextActive]}>{option.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.inputLabel}>Ghi chú kỹ thuật *</Text>
+              <TextInput
+                style={[styles.adminFormInput, styles.feedbackTextarea]}
+                value={forwardTechnicalNotes}
+                onChangeText={setForwardTechnicalNotes}
+                placeholder="Mô tả bước tái hiện, log, module nghi ngờ, dữ liệu liên quan..."
+                placeholderTextColor={ADMIN_COLORS.muted}
+                multiline
+                textAlignVertical="top"
+              />
+
+              <View style={styles.editUserActions}>
+                <TouchableOpacity style={styles.cancelButton} onPress={() => setShowForwardDevModal(false)}>
+                  <Text style={styles.cancelButtonText}>Hủy</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.saveAdminButton, isForwardingFeedback && styles.disabledButton]} onPress={handleForwardFeedbackToDev} disabled={isForwardingFeedback}>
+                  {isForwardingFeedback ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveAdminButtonText}>Chuyển Dev</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal visible={Boolean(previewAttachmentUrl)} transparent animationType="fade" onRequestClose={() => setPreviewAttachmentUrl(null)}>
+          <View style={styles.attachmentLightbox}>
+            <TouchableOpacity style={styles.attachmentCloseButton} onPress={() => setPreviewAttachmentUrl(null)}>
+              <Ionicons name="close" size={28} color="#FFFFFF" />
+            </TouchableOpacity>
+            {previewAttachmentUrl ? <Image source={{ uri: previewAttachmentUrl }} style={styles.attachmentLightboxImage} resizeMode="contain" /> : null}
           </View>
         </Modal>
 
@@ -2653,6 +3657,55 @@ const styles = StyleSheet.create({
   notificationColActions: {
     width: 150,
   },
+  feedbackColId: {
+    width: 110,
+  },
+  feedbackColSubject: {
+    flex: 1.8,
+    minWidth: 240,
+  },
+  feedbackColUser: {
+    width: 170,
+  },
+  feedbackColCategory: {
+    width: 110,
+  },
+  feedbackColPriority: {
+    width: 110,
+  },
+  feedbackColStatus: {
+    width: 130,
+  },
+  feedbackColDate: {
+    width: 150,
+  },
+  feedbackColActions: {
+    width: 150,
+  },
+  aiLogColId: {
+    width: 110,
+  },
+  aiLogColUser: {
+    width: 150,
+  },
+  aiLogColEmail: {
+    width: 170,
+  },
+  aiLogColCategory: {
+    width: 150,
+  },
+  aiLogColConfidence: {
+    width: 120,
+  },
+  aiLogColStatus: {
+    width: 140,
+  },
+  aiLogColDate: {
+    width: 150,
+  },
+  aiLogColActions: {
+    width: 120,
+  },
   userIdentity: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2930,6 +3983,30 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
     shadowOffset: { width: -8, height: 0 },
   },
+  feedbackDrawer: {
+    width: 640,
+    maxWidth: '100%',
+    height: '100%',
+    backgroundColor: ADMIN_COLORS.surface,
+    borderLeftWidth: 1,
+    borderLeftColor: ADMIN_COLORS.border,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    shadowOffset: { width: -8, height: 0 },
+  },
+  aiLogDrawer: {
+    width: 760,
+    maxWidth: '100%',
+    height: '100%',
+    backgroundColor: ADMIN_COLORS.surface,
+    borderLeftWidth: 1,
+    borderLeftColor: ADMIN_COLORS.border,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    shadowOffset: { width: -8, height: 0 },
+  },
   drawerHeader: {
     minHeight: 112,
     padding: 20,
@@ -3067,6 +4144,96 @@ const styles = StyleSheet.create({
   },
   drawerSuccessText: {
     color: ADMIN_COLORS.primary,
+  },
+  feedbackTextarea: {
+    minHeight: 118,
+    paddingTop: 12,
+  },
+  feedbackAttachmentPreview: {
+    alignSelf: 'stretch',
+    width: '100%',
+    maxWidth: '100%',
+    marginTop: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: ADMIN_COLORS.border,
+    backgroundColor: '#F8FAFC',
+    overflow: 'hidden',
+    flexShrink: 1,
+  },
+  feedbackAttachmentImageFrame: {
+    width: '100%',
+    maxWidth: '100%',
+    height: 220,
+    maxHeight: 220,
+    backgroundColor: ADMIN_COLORS.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    flexShrink: 1,
+  },
+  feedbackAttachmentImage: {
+    width: '100%',
+    height: '100%',
+    maxHeight: 220,
+    flexShrink: 1,
+  },
+  feedbackAttachmentLink: {
+    padding: 12,
+    color: ADMIN_COLORS.primary,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  aiLogReceiptPreview: {
+    alignSelf: 'stretch',
+    width: '100%',
+    marginTop: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: ADMIN_COLORS.border,
+    backgroundColor: ADMIN_COLORS.background,
+    overflow: 'hidden',
+  },
+  aiLogReceiptImage: {
+    width: '100%',
+    height: 280,
+    maxHeight: 280,
+  },
+  forwardDevModal: {
+    width: 560,
+    maxWidth: '94%',
+    maxHeight: '86%',
+    borderRadius: 24,
+    backgroundColor: ADMIN_COLORS.surface,
+    borderWidth: 1,
+    borderColor: ADMIN_COLORS.border,
+    padding: 20,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.16,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 14 },
+  },
+  attachmentLightbox: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.86)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  attachmentCloseButton: {
+    position: 'absolute',
+    top: 28,
+    right: 28,
+    zIndex: 2,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(15,23,42,0.56)',
+  },
+  attachmentLightboxImage: {
+    width: '88%',
+    height: '82%',
   },
   drawerSectionTitle: {
     fontSize: 15,
@@ -3317,16 +4484,27 @@ const styles = StyleSheet.create({
   detailGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    alignItems: 'stretch',
     gap: 12,
   },
   detailCard: {
     flexGrow: 1,
+    flexShrink: 1,
     flexBasis: 220,
+    minWidth: 0,
+    maxWidth: '100%',
     borderRadius: 14,
     borderWidth: 1,
     borderColor: ADMIN_COLORS.border,
     backgroundColor: '#F8FAFC',
     padding: 12,
+    overflow: 'hidden',
+  },
+  feedbackDetailFullCard: {
+    width: '100%',
+    flexBasis: '100%',
+    flexGrow: 0,
+    alignSelf: 'stretch',
   },
   detailLabel: {
     color: ADMIN_COLORS.muted,
@@ -3335,10 +4513,21 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   detailValue: {
+    maxWidth: '100%',
+    flexShrink: 1,
+    flexWrap: 'wrap',
     color: ADMIN_COLORS.text,
     fontSize: 13,
     fontWeight: '700',
     lineHeight: 19,
+  },
+  detailHint: {
+    maxWidth: '100%',
+    marginTop: 6,
+    color: ADMIN_COLORS.muted,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
   },
   chartGrid: {
     flexDirection: 'row',

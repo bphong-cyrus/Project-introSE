@@ -247,6 +247,17 @@ File này tạo/cập nhật:
 - `admin_update_user_account_status(...)`
 - các policy/grant phục vụ admin dashboard.
 
+### AI Scan Logs SQL
+
+Chạy thêm file này để bật UC17 Nhật ký AI trên Admin Dashboard:
+
+```text
+src/data/datasources/supabase/ai_scan_logs_uc17.sql
+```
+
+File này bổ sung cột log còn thiếu cho `scan_logs`, bucket `receipt-images`,
+grants/RLS policies cho user/admin và các trường relabel/review.
+
 ### Các patch cũ
 
 Các file sau là patch nhỏ từng bước, giữ lại để debug hoặc migrate từng phần:
@@ -348,6 +359,7 @@ Mở các route:
 http://localhost:8081/admin
 http://localhost:8081/admin/users
 http://localhost:8081/admin/notifications
+http://localhost:8081/admin/ai-logs
 ```
 
 Điều kiện truy cập admin:

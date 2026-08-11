@@ -211,10 +211,29 @@ export interface Database {
           error_code: string | null;
           error_message: string | null;
           is_reviewed: boolean;
+          raw_receipt_image_url: string | null;
+          raw_text: string | null;
+          extracted_fields: Record<string, unknown> | null;
+          model_name: string | null;
+          processing_time_ms: number | null;
+          reviewed_at: string | null;
+          reviewed_by: string | null;
+          relabeled_category_id: string | null;
+          relabel_notes: string | null;
           created_at: string;
         };
-        Insert: Omit<Database['public']['Tables']['scan_logs']['Row'], 'scan_log_id' | 'created_at'> & {
+        Insert: Omit<Database['public']['Tables']['scan_logs']['Row'], 'scan_log_id' | 'created_at' | 'is_reviewed' | 'raw_receipt_image_url' | 'raw_text' | 'extracted_fields' | 'model_name' | 'processing_time_ms' | 'reviewed_at' | 'reviewed_by' | 'relabeled_category_id' | 'relabel_notes'> & {
           scan_log_id?: string;
+          is_reviewed?: boolean;
+          raw_receipt_image_url?: string | null;
+          raw_text?: string | null;
+          extracted_fields?: Record<string, unknown> | null;
+          model_name?: string | null;
+          processing_time_ms?: number | null;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+          relabeled_category_id?: string | null;
+          relabel_notes?: string | null;
           created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['scan_logs']['Insert']>;
@@ -223,18 +242,40 @@ export interface Database {
         Row: {
           feedback_id: string;
           user_id: string;
+          user_email: string | null;
           category: string;
           subject: string;
           content: string;
           attachment_url: string | null;
           status: string;
+          priority: string | null;
+          internal_notes: string | null;
+          technical_notes: string | null;
+          related_module: string | null;
+          dev_status: string | null;
+          dev_email: string | null;
+          dev_tracking_id: string | null;
+          forwarded_to_dev_at: string | null;
+          forwarded_to_dev_by: string | null;
           admin_response: string | null;
           responded_at: string | null;
           responded_by: string | null;
           created_at: string;
         };
-        Insert: Omit<Database['public']['Tables']['feedbacks']['Row'], 'feedback_id' | 'created_at'> & {
+        Insert: Omit<Database['public']['Tables']['feedbacks']['Row'], 'feedback_id' | 'created_at' | 'priority' | 'internal_notes' | 'technical_notes' | 'related_module' | 'dev_status' | 'dev_email' | 'dev_tracking_id' | 'forwarded_to_dev_at' | 'forwarded_to_dev_by' | 'admin_response' | 'responded_at' | 'responded_by'> & {
           feedback_id?: string;
+          priority?: string | null;
+          internal_notes?: string | null;
+          technical_notes?: string | null;
+          related_module?: string | null;
+          dev_status?: string | null;
+          dev_email?: string | null;
+          dev_tracking_id?: string | null;
+          forwarded_to_dev_at?: string | null;
+          forwarded_to_dev_by?: string | null;
+          admin_response?: string | null;
+          responded_at?: string | null;
+          responded_by?: string | null;
           created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['feedbacks']['Insert']>;

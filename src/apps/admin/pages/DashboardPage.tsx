@@ -196,7 +196,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           <Text style={styles.alertTitle}>Góp ý chờ xử lý</Text>
           <Text style={styles.alertSubtitle}>Cần phản hồi từ đội ngũ hỗ trợ</Text>
         </View>
-        <Text style={styles.alertValue}>{formatNumber(metrics.pendingFeedbacks)}</Text>
+        <Text style={styles.alertValue}>{formatNumber(metrics.pendingFeedbackQueue ?? metrics.pendingFeedbacks)}</Text>
       </View>
 
       <View style={styles.alertRow}>
@@ -226,10 +226,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           <Ionicons name="receipt" size={18} color={ADMIN_COLORS.error} />
         </View>
         <View style={styles.alertContent}>
-          <Text style={styles.alertTitle}>Lượt quét AI lỗi</Text>
+          <Text style={styles.alertTitle}>Lỗi AI chưa kiểm tra</Text>
           <Text style={styles.alertSubtitle}>Cần xem lại trong nhật ký AI</Text>
         </View>
-        <Text style={styles.alertValue}>{formatNumber(metrics.failedScans)}</Text>
+        <Text style={styles.alertValue}>{formatNumber(metrics.unreviewedScanErrors ?? metrics.failedScans)}</Text>
       </View>
     </View>
   </>
