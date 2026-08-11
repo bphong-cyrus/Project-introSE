@@ -26,7 +26,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
+import { useAuth } from '../../../state/AuthContext';
 import { useCategories } from '../../../state/CategoryContext';
+import { supabase } from '../../../data/datasources/supabase/supabase';
 import CameraViewfinder from '../components/CameraViewfinder';
 import ProcessingOverlay from '../components/ProcessingOverlay';
 import {
@@ -73,7 +75,111 @@ export interface ExtractedReceiptData {
 
 type PermissionState = 'pending' | 'granted' | 'denied';
 
+const getAverageConfidenceScore = (confidence: ExtractedReceiptData['confidence']) => {
+  const values = Object.values(confidence)
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value));
+
+  if (values.length === 0) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+};
+
+const getImageExtension = (mediaType: string) => {
+  switch (mediaType) {
+    case 'image/png':
+      return 'png';
+    case 'image/webp':
+      return 'webp';
+    case 'image/gif':
+      return 'gif';
+    default:
+      return 'jpg';
+  }
+};
+
+const getModelName = (raw: string) => {
+  const match = raw.match(/^model=(.+)$/);
+  return match?.[1] || null;
+};
+
+const uploadReceiptImageForLog = async (userId: string, image: PickedImage) => {
+  try {
+    const response = await fetch(image.uri);
+    const blob = await response.blob();
+    const extension = getImageExtension(image.mediaType);
+    const storagePath = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${extension}`;
+    const { error } = await supabase.storage
+      .from('receipt-images')
+      .upload(storagePath, blob, {
+        contentType: image.mediaType,
+        upsert: false,
+      });
+
+    if (error) throw error;
+
+    const { data } = supabase.storage.from('receipt-images').getPublicUrl(storagePath);
+    return data.publicUrl || image.uri;
+  } catch (error) {
+    console.warn('Không thể upload ảnh receipt cho scan log:', error);
+    return image.uri || null;
+  }
+};
+
+const saveAiScanLog = async (params: {
+  userId?: string;
+  image: PickedImage;
+  status: 'success' | 'failed';
+  processingTimeMs: number;
+  data?: ExtractedReceiptData;
+  raw?: string;
+  errorCode?: string;
+  errorMessage?: string;
+}) => {
+  if (!params.userId) return;
+
+  try {
+    const imageUrl = await uploadReceiptImageForLog(params.userId, params.image);
+    const extractedFields = params.data
+      ? {
+          amount: params.data.amount,
+          merchantName: params.data.storeName,
+          date: params.data.date.toISOString(),
+          categoryId: params.data.categoryId,
+          categoryName: params.data.categoryName,
+          type: params.data.type,
+          confidence: params.data.confidence,
+          note: params.data.note || null,
+        }
+      : null;
+
+    const { error } = await supabase.from('scan_logs').insert({
+      user_id: params.userId,
+      receipt_id: null,
+      ocr_result_id: null,
+      status: params.status,
+      extracted_amount: params.data?.amount ?? null,
+      extracted_merchant: params.data?.storeName ?? null,
+      suggested_category_id: params.data?.categoryId ?? null,
+      final_category_id: params.data?.categoryId ?? null,
+      confidence_score: params.data ? getAverageConfidenceScore(params.data.confidence) : null,
+      error_code: params.errorCode || null,
+      error_message: params.errorMessage || null,
+      is_reviewed: false,
+      raw_receipt_image_url: imageUrl,
+      raw_text: params.raw || null,
+      extracted_fields: extractedFields,
+      model_name: params.raw ? getModelName(params.raw) : null,
+      processing_time_ms: params.processingTimeMs,
+    });
+
+    if (error) throw error;
+  } catch (error) {
+    console.warn('Không thể ghi scan log AI:', error);
+  }
+};
+
 const AIScannerScreen: React.FC<AIScannerScreenProps> = ({ onClose, onCapture }) => {
+  const { user } = useAuth();
   const { allCategories } = useCategories();
   const [cameraPermission, setCameraPermission] = useState<PermissionState>('pending');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -110,6 +216,7 @@ const AIScannerScreen: React.FC<AIScannerScreenProps> = ({ onClose, onCapture })
 
   const runAnalysis = useCallback(
     async (image: PickedImage) => {
+      const startedAt = Date.now();
       setIsProcessing(true);
       try {
         const result = await analyzeReceipt({
@@ -119,6 +226,15 @@ const AIScannerScreen: React.FC<AIScannerScreenProps> = ({ onClose, onCapture })
           categories: allCategories,
         });
 
+        await saveAiScanLog({
+          userId: user?.id,
+          image,
+          status: 'success',
+          processingTimeMs: Date.now() - startedAt,
+          data: result.data,
+          raw: result.raw,
+        });
+
         onCapture(result.data);
       } catch (err: any) {
         const title =
@@ -126,6 +242,16 @@ const AIScannerScreen: React.FC<AIScannerScreenProps> = ({ onClose, onCapture })
         const detail =
           err?.message ||
           'Đã có lỗi khi gọi backend. Vui lòng kiểm tra kết nối mạng và thử lại.';
+
+        await saveAiScanLog({
+          userId: user?.id,
+          image,
+          status: 'failed',
+          processingTimeMs: Date.now() - startedAt,
+          errorCode: err instanceof GeminiApiError && err.status ? `HTTP_${err.status}` : 'AI_SCAN_ERROR',
+          errorMessage: detail,
+        });
+
         Alert.alert(title, detail, [
           { text: 'Thử lại', onPress: () => {} },
           { text: 'Đóng', style: 'cancel' },
@@ -134,7 +260,7 @@ const AIScannerScreen: React.FC<AIScannerScreenProps> = ({ onClose, onCapture })
         setIsProcessing(false);
       }
     },
-    [allCategories, onCapture],
+    [allCategories, onCapture, user?.id],
   );
 
   const handleCapture = useCallback(async () => {

@@ -1,6 +1,6 @@
 // SmartSpend AI - Profile Screen
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -29,6 +29,76 @@ type EditableProfile = {
   income: string;
 };
 
+type UserFeedbackForm = {
+  category: string;
+  subject: string;
+  content: string;
+};
+
+type FeedbackAttachment = {
+  name: string;
+  uri?: string;
+  file?: File;
+  mimeType?: string;
+};
+
+type FeedbackPriority = 'low' | 'medium' | 'high' | 'critical';
+
+const USER_FEEDBACK_CATEGORIES = [
+  { code: 'ai_scanner', label: 'Lỗi Quét Hóa Đơn (AI Scanner)' },
+  { code: 'budget', label: 'Lỗi Quản Lý Ngân Sách (Budget)' },
+  { code: 'transactions', label: 'Lỗi Lịch Sử Giao Dịch (Transactions)' },
+  { code: 'auth', label: 'Lỗi Đăng Nhập / Tài Khoản (Auth)' },
+  { code: 'suggestion', label: 'Góp Ý Tính Năng Mới (Suggestion)' },
+  { code: 'other', label: 'Khác (Other)' },
+] as const;
+
+const CRITICAL_FEEDBACK_KEYWORDS = [
+  'không đăng nhập',
+  'khong dang nhap',
+  'bị khóa',
+  'bi khoa',
+  'mat tien',
+  'crash',
+  'sập',
+  'sap',
+  'khẩn cấp',
+  'khan cap',
+];
+
+const HIGH_PRIORITY_FEEDBACK_CATEGORIES = ['auth', 'budget', 'transactions'];
+
+const getDefaultFeedbackPriority = (category: string, subject: string, content: string): FeedbackPriority => {
+  const normalizedText = `${subject} ${content}`.trim().toLowerCase();
+
+  if (CRITICAL_FEEDBACK_KEYWORDS.some((keyword) => normalizedText.includes(keyword))) {
+    return 'critical';
+  }
+
+  if (HIGH_PRIORITY_FEEDBACK_CATEGORIES.includes(category)) {
+    return 'high';
+  }
+
+  if (category === 'ai_scanner') {
+    return 'medium';
+  }
+
+  return 'low';
+};
+
+const getFeedbackPriorityLabel = (priority: FeedbackPriority) => {
+  switch (priority) {
+    case 'critical':
+      return 'Khẩn cấp';
+    case 'high':
+      return 'Cao';
+    case 'medium':
+      return 'Trung bình';
+    default:
+      return 'Thấp';
+  }
+};
+
 const ProfileScreen: React.FC = () => {
   const { user, logout, updateProfile, isLoading } = useAuth();
   const { settings, updateSettings } = useNotifications();
@@ -38,7 +108,17 @@ const ProfileScreen: React.FC = () => {
   const [showAvatarLightbox, setShowAvatarLightbox] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const [feedbackError, setFeedbackError] = useState('');
+  const [feedbackToast, setFeedbackToast] = useState('');
+  const [feedbackAttachment, setFeedbackAttachment] = useState<FeedbackAttachment | null>(null);
+  const [feedbackForm, setFeedbackForm] = useState<UserFeedbackForm>({
+    category: USER_FEEDBACK_CATEGORIES[0].code,
+    subject: '',
+    content: '',
+  });
   const [notificationForm, setNotificationForm] = useState({
     pushEnabled: true,
     dailyReminderEnabled: false,
@@ -72,6 +152,11 @@ const ProfileScreen: React.FC = () => {
       reminderDate: settings.reminder_date ? settings.reminder_date.slice(0, 16) : '',
     });
   }, [settings]);
+
+  const showFeedbackSuccessToast = useCallback((message: string) => {
+    setFeedbackToast(message);
+    setTimeout(() => setFeedbackToast(''), 3500);
+  }, []);
 
   const formatCurrency = (value?: number): string => {
     if (!value) return 'Chưa cập nhật';
@@ -275,9 +360,170 @@ const ProfileScreen: React.FC = () => {
     }
   };
 
+  const resetFeedbackForm = useCallback(() => {
+    setFeedbackForm({
+      category: USER_FEEDBACK_CATEGORIES[0].code,
+      subject: '',
+      content: '',
+    });
+    setFeedbackAttachment(null);
+    setFeedbackError('');
+  }, []);
+
+  const sanitizeFeedbackFileName = (name: string) => name
+    .trim()
+    .replace(/[^\w.\-]+/g, '-')
+    .replace(/-+/g, '-')
+    || 'feedback-attachment.jpg';
+
+  const uploadFeedbackAttachment = useCallback(async () => {
+    if (!user || !feedbackAttachment) return null;
+
+    const isFileAttachment = Boolean(feedbackAttachment.file);
+    const payload = feedbackAttachment.file || (
+      feedbackAttachment.uri
+        ? await fetch(feedbackAttachment.uri).then((response) => response.blob())
+        : null
+    );
+
+    if (!payload) return null;
+
+    const safeName = sanitizeFeedbackFileName(feedbackAttachment.name);
+    const filePath = `${user.id}/${Date.now()}-${safeName}`;
+    const contentType = feedbackAttachment.mimeType || (isFileAttachment ? feedbackAttachment.file?.type : undefined) || 'image/jpeg';
+
+    const { error: uploadError } = await supabase.storage
+      .from('feedback-attachments')
+      .upload(filePath, payload, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType,
+      });
+
+    if (uploadError) {
+      throw new Error(`${uploadError.message}\n\nHãy kiểm tra bucket Supabase Storage tên "feedback-attachments" và policy upload/select.`);
+    }
+
+    const { data } = supabase.storage.from('feedback-attachments').getPublicUrl(filePath);
+    return data.publicUrl;
+  }, [feedbackAttachment, user]);
+
+  const handlePickFeedbackAttachment = useCallback(async () => {
+    if (Platform.OS !== 'web') {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Cần quyền truy cập ảnh', 'Vui lòng cấp quyền truy cập thư viện ảnh để đính kèm ảnh màn hình.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        quality: 0.85,
+      });
+
+      if (!result.canceled && result.assets[0]?.uri) {
+        const asset = result.assets[0];
+        setFeedbackAttachment({
+          uri: asset.uri,
+          name: asset.fileName || 'feedback-screenshot.jpg',
+          mimeType: asset.mimeType || 'image/jpeg',
+        });
+      }
+      return;
+    }
+
+    const documentRef = (globalThis as any).document;
+    const input = documentRef?.createElement('input');
+    if (!input) {
+      Alert.alert('Lỗi', 'Không thể mở File Explorer trong môi trường hiện tại.');
+      return;
+    }
+
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (file) {
+        setFeedbackAttachment({
+          file,
+          name: file.name || 'feedback-screenshot.jpg',
+          mimeType: file.type || 'image/jpeg',
+        });
+      }
+    };
+    input.click();
+  }, []);
+
+  const handleSubmitFeedback = useCallback(async () => {
+    if (!user) {
+      setFeedbackError('Bạn cần đăng nhập để gửi phản hồi.');
+      return;
+    }
+
+    const category = feedbackForm.category.trim();
+    const subject = feedbackForm.subject.trim();
+    const content = feedbackForm.content.trim();
+
+    if (!USER_FEEDBACK_CATEGORIES.some((item) => item.code === category)) {
+      setFeedbackError('Vui lòng chọn danh mục phản hồi.');
+      return;
+    }
+
+    if (!subject) {
+      setFeedbackError('Vui lòng nhập tiêu đề phản hồi.');
+      return;
+    }
+
+    if (subject.length > 100) {
+      setFeedbackError('Tiêu đề phản hồi không được vượt quá 100 ký tự.');
+      return;
+    }
+
+    if (!content) {
+      setFeedbackError('Vui lòng nhập mô tả chi tiết.');
+      return;
+    }
+
+    setIsSubmittingFeedback(true);
+    setFeedbackError('');
+    try {
+      const attachmentUrl = await uploadFeedbackAttachment();
+      const priority = getDefaultFeedbackPriority(category, subject, content);
+      const { error } = await supabase
+        .from('feedbacks')
+        .insert({
+          user_id: user.id,
+          user_email: user.email || null,
+          category,
+          subject,
+          content,
+          attachment_url: attachmentUrl,
+          status: 'pending',
+          priority,
+        });
+
+      if (error) throw error;
+
+      setShowFeedbackModal(false);
+      resetFeedbackForm();
+      showFeedbackSuccessToast('Cảm ơn bạn đã gửi phản hồi! Đội ngũ hỗ trợ sẽ xử lý sớm nhất.');
+    } catch (error: any) {
+      setFeedbackError(error?.message || 'Không thể gửi phản hồi. Vui lòng thử lại.');
+    } finally {
+      setIsSubmittingFeedback(false);
+    }
+  }, [feedbackForm, resetFeedbackForm, showFeedbackSuccessToast, uploadFeedbackAttachment, user]);
+
   const navigatePlaceholder = (title: string) => {
     Alert.alert(title, 'Màn hình này đã được chuẩn bị route placeholder và sẽ được tích hợp ở bước tiếp theo.');
   };
+
+  const currentFeedbackPriority = getDefaultFeedbackPriority(
+    feedbackForm.category,
+    feedbackForm.subject,
+    feedbackForm.content
+  );
 
   const renderAvatar = (size: number) => {
     if (user?.avatar) {
@@ -368,11 +614,12 @@ const ProfileScreen: React.FC = () => {
 
         <Text style={styles.sectionLabel}>Khác</Text>
         <View style={styles.menuGroup}>
-          <TouchableOpacity style={styles.menuItem} onPress={() => navigatePlaceholder('Đóng góp ý kiến')}>
+          <TouchableOpacity style={styles.menuItem} onPress={() => setShowFeedbackModal(true)}>
             <View style={styles.menuLeft}>
               <Ionicons name="mail" size={18} color={Colors.primary} />
               <Text style={styles.menuText}>Đóng góp ý kiến</Text>
             </View>
+            <Ionicons name="chevron-forward" size={20} color={Colors.primary} />
           </TouchableOpacity>
         </View>
 
@@ -388,6 +635,13 @@ const ProfileScreen: React.FC = () => {
           </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {feedbackToast ? (
+        <View style={styles.feedbackToast}>
+          <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+          <Text style={styles.feedbackToastText}>{feedbackToast}</Text>
+        </View>
+      ) : null}
 
       <Modal visible={showAvatarSheet} transparent animationType="fade" onRequestClose={() => setShowAvatarSheet(false)}>
         <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setShowAvatarSheet(false)}>
@@ -478,6 +732,87 @@ const ProfileScreen: React.FC = () => {
             <TouchableOpacity style={styles.saveButton} onPress={handleSaveNotificationSettings}>
               <Text style={styles.saveButtonText}>Lưu cài đặt</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={showFeedbackModal} transparent animationType="slide" onRequestClose={() => setShowFeedbackModal(false)}>
+        <View style={styles.editBackdrop}>
+          <View style={styles.feedbackModal}>
+            <View style={styles.editHeader}>
+              <Text style={styles.editTitle}>Đóng góp ý kiến</Text>
+              <TouchableOpacity onPress={() => setShowFeedbackModal(false)}>
+                <Ionicons name="close" size={24} color={Colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.feedbackModalContent}>
+              {feedbackError ? (
+                <View style={styles.feedbackErrorBox}>
+                  <Ionicons name="warning" size={18} color={Colors.danger} />
+                  <Text style={styles.feedbackErrorText}>{feedbackError}</Text>
+                </View>
+              ) : null}
+
+              <Text style={styles.inputLabel}>Danh mục phản hồi *</Text>
+              <View style={styles.feedbackCategoryGrid}>
+                {USER_FEEDBACK_CATEGORIES.map((category) => {
+                  const selected = feedbackForm.category === category.code;
+                  return (
+                    <TouchableOpacity
+                      key={category.code}
+                      style={[styles.feedbackCategoryButton, selected && styles.feedbackCategoryButtonActive]}
+                      onPress={() => setFeedbackForm(prev => ({ ...prev, category: category.code }))}
+                    >
+                      <Text style={[styles.feedbackCategoryText, selected && styles.feedbackCategoryTextActive]}>{category.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              <Text style={styles.feedbackPriorityHint}>
+                Ưu tiên tự động: {getFeedbackPriorityLabel(currentFeedbackPriority)}. Auth/Budget/Transactions mặc định cao, AI Scanner trung bình, Góp ý/Khác thấp; từ khóa nghiêm trọng như "không đăng nhập", "crash" sẽ là khẩn cấp.
+              </Text>
+
+              <Text style={styles.inputLabel}>Tiêu đề / Chủ đề *</Text>
+              <TextInput
+                style={styles.input}
+                value={feedbackForm.subject}
+                onChangeText={(subject) => setFeedbackForm(prev => ({ ...prev, subject }))}
+                placeholder="Nhập tiêu đề ngắn gọn"
+                maxLength={100}
+              />
+
+              <Text style={styles.inputLabel}>Mô tả chi tiết *</Text>
+              <TextInput
+                style={[styles.input, styles.feedbackContentInput]}
+                value={feedbackForm.content}
+                onChangeText={(content) => setFeedbackForm(prev => ({ ...prev, content }))}
+                placeholder="Mô tả lỗi/góp ý càng chi tiết càng tốt..."
+                multiline
+                textAlignVertical="top"
+              />
+
+              <Text style={styles.inputLabel}>Ảnh màn hình đính kèm</Text>
+              <TouchableOpacity style={styles.feedbackAttachmentButton} onPress={handlePickFeedbackAttachment}>
+                <Ionicons name="image-outline" size={18} color={Colors.primary} />
+                <Text style={styles.feedbackAttachmentText}>
+                  {feedbackAttachment ? feedbackAttachment.name : 'Chọn ảnh màn hình, không bắt buộc'}
+                </Text>
+              </TouchableOpacity>
+              {feedbackAttachment ? (
+                <TouchableOpacity style={styles.feedbackRemoveAttachment} onPress={() => setFeedbackAttachment(null)}>
+                  <Text style={styles.feedbackRemoveAttachmentText}>Xóa ảnh đính kèm</Text>
+                </TouchableOpacity>
+              ) : null}
+
+              <TouchableOpacity
+                style={[styles.saveButton, isSubmittingFeedback && styles.logoutButtonDisabled]}
+                onPress={handleSubmitFeedback}
+                disabled={isSubmittingFeedback}
+              >
+                {isSubmittingFeedback ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveButtonText}>Gửi phản hồi</Text>}
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -721,6 +1056,17 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 34,
   },
+  feedbackModal: {
+    maxHeight: '88%',
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 34,
+  },
+  feedbackModalContent: {
+    paddingBottom: 6,
+  },
   editHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -793,6 +1139,114 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     color: Colors.textPrimary,
     backgroundColor: '#FFFFFF',
+  },
+  feedbackContentInput: {
+    minHeight: 120,
+    paddingTop: 12,
+  },
+  feedbackCategoryGrid: {
+    gap: 8,
+    marginBottom: 12,
+  },
+  feedbackCategoryButton: {
+    minHeight: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  feedbackCategoryButtonActive: {
+    borderColor: Colors.primary,
+    backgroundColor: '#E8F5E9',
+  },
+  feedbackCategoryText: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  feedbackCategoryTextActive: {
+    color: Colors.primary,
+  },
+  feedbackPriorityHint: {
+    marginTop: -4,
+    marginBottom: 12,
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+  },
+  feedbackAttachmentButton: {
+    minHeight: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+  },
+  feedbackAttachmentText: {
+    flex: 1,
+    color: Colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  feedbackRemoveAttachment: {
+    alignSelf: 'flex-start',
+    marginBottom: 12,
+  },
+  feedbackRemoveAttachmentText: {
+    color: Colors.danger,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  feedbackErrorBox: {
+    flexDirection: 'row',
+    gap: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    backgroundColor: '#FEF2F2',
+    padding: 10,
+    marginBottom: 12,
+  },
+  feedbackErrorText: {
+    flex: 1,
+    color: Colors.danger,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+  },
+  feedbackToast: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    bottom: 110,
+    minHeight: 48,
+    borderRadius: 14,
+    backgroundColor: Colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
+  },
+  feedbackToastText: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+    lineHeight: 18,
   },
   inputDisabled: {
     backgroundColor: Colors.backgroundSecondary,

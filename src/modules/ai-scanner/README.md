@@ -74,7 +74,9 @@ Default: `http://10.0.2.2:4000` (Android emulator → host machine).
 | File too big (>4 MB) | "Lỗi AI Scanner" | multer `LIMIT_FILE_SIZE` mapped to 413 by backend |
 
 All errors surface via `Alert.alert(...)` in `AIScannerScreen.runAnalysis`
-and the user can retry without losing context.
+and the user can retry without losing context. Successful and failed scans
+are also written to `scan_logs` for the Admin AI Logs page (UC17), including
+confidence, processing time, image URL, extracted fields and error detail.
 
 ## What's in the response
 
@@ -100,10 +102,11 @@ and the user can retry without losing context.
 
 - No authentication on the backend yet. Add JWT middleware + user scoping
   before exposing publicly.
-- No scan-log persistence (per UCS §2.13 step 7). When the Supabase
-  tables (`receipts`, `receipt_images`, `ocr_results`, `expenses`) ship,
-  add a repository module and call it from the controller after a
-  successful save.
+- Scan logs are persisted by the authenticated mobile client after the
+  backend returns or fails. Run
+  `src/data/datasources/supabase/ai_scan_logs_uc17.sql` before testing on a
+  fresh Supabase project so the required columns, storage bucket, grants and
+  RLS policies exist.
 - The mobile side cannot detect "blurry / too dark" images. Add a quick
   pre-check in `backend/src/services/receiptParser.js` to reject them
   before they hit Gemini (saves tokens).
