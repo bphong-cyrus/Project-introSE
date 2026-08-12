@@ -34,7 +34,7 @@ export class ReceiptRepository {
           total_amount: totalAmount,
           currency_code: currencyCode,
           payment_method: paymentMethod || null,
-          status: 'completed',
+          status: 'confirmed',
         })
         .select()
         .single();
@@ -69,10 +69,15 @@ export class ReceiptRepository {
 
       // Upload image to Supabase Storage
       const filePath = `${receiptId}/${fileName}`;
+      
+      // Fix for React Native/Expo: fetch the file URI to a Blob first
+      const response = await fetch(imageUri);
+      const blob = await response.blob();
+      
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('receipts')
-        .upload(filePath, imageUri, {
-          contentType: 'image/jpeg',
+        .upload(filePath, blob, {
+          contentType: blob.type || 'image/jpeg',
           upsert: true,
         });
 
@@ -216,7 +221,7 @@ export class ReceiptRepository {
    */
   async updateReceiptStatus(
     receiptId: string,
-    status: 'pending' | 'processing' | 'completed' | 'failed'
+    status: 'parsed' | 'confirmed' | 'ignored'
   ): Promise<boolean> {
     try {
       const { error } = await supabase
@@ -236,6 +241,41 @@ export class ReceiptRepository {
     } catch (error) {
       console.error('ReceiptRepository.updateReceiptStatus failed:', error);
       return false;
+    }
+  }
+
+  /**
+   * Create a receipt line item
+   */
+  async createLineItem(
+    receiptId: string,
+    itemName: string,
+    amount: number,
+    quantity: number = 1
+  ): Promise<string | null> {
+    try {
+      const { data, error } = await supabase
+        .from('receipt_line_items')
+        .insert({
+          receipt_id: receiptId,
+          line_number: 1,
+          item_name: itemName,
+          quantity: quantity,
+          unit_price: amount,
+          line_total: amount * quantity,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('ReceiptRepository.createLineItem error:', error);
+        return null;
+      }
+
+      return data?.receipt_line_item_id || null;
+    } catch (error) {
+      console.error('ReceiptRepository.createLineItem failed:', error);
+      return null;
     }
   }
 }

@@ -143,6 +143,21 @@ export interface Database {
         };
         Update: Partial<Database['public']['Tables']['receipt_images']['Insert']>;
       };
+      receipt_line_items: {
+        Row: {
+          receipt_line_item_id: string;
+          receipt_id: string;
+          line_number: number;
+          item_name: string;
+          quantity: number;
+          unit_price: number;
+          line_total: number;
+        };
+        Insert: Omit<Database['public']['Tables']['receipt_line_items']['Row'], 'receipt_line_item_id'> & {
+          receipt_line_item_id?: string;
+        };
+        Update: Partial<Database['public']['Tables']['receipt_line_items']['Insert']>;
+      };
       user_profiles: {
         Row: {
           user_id: string;
