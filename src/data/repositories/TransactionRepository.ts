@@ -5,6 +5,7 @@
 
 import { supabase, Database } from '../datasources/supabase/supabase';
 import { Transaction } from '../../shared/types';
+import { receiptRepository } from './ReceiptRepository';
 
 type TransactionRow = Database['public']['Tables']['transactions']['Row'];
 
@@ -140,13 +141,46 @@ export class TransactionRepository {
    */
   async create(transaction: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>): Promise<Transaction | null> {
     try {
+      let receiptId: string | null = null;
+      let receiptLineItemId: string | null = null;
+      const isOcr = transaction.source === 'ocr' || !!transaction.imageUrl;
+
+      if (isOcr && transaction.imageUrl) {
+        // Create Receipt
+        const receiptDate = transaction.date instanceof Date ? transaction.date : new Date(transaction.date);
+        const receipt = await receiptRepository.createReceipt(
+          transaction.userId,
+          transaction.name,
+          receiptDate,
+          transaction.amount,
+          'VND'
+        );
+
+        if (receipt) {
+          receiptId = receipt.receipt_id;
+
+          // Upload Image
+          const ext = transaction.imageUrl.split('.').pop() || 'jpg';
+          const fileName = `${receiptId}.${ext}`;
+          await receiptRepository.uploadReceiptImage(receiptId, transaction.imageUrl, fileName);
+
+          // Create Line Item
+          receiptLineItemId = await receiptRepository.createLineItem(
+            receiptId,
+            transaction.name,
+            transaction.amount,
+            1
+          );
+        }
+      }
+
       const { data, error } = await supabase
         .from('transactions')
         .insert({
           user_id: transaction.userId,
           category_id: transaction.categoryId,
-          receipt_id: null,
-          receipt_line_item_id: null,
+          receipt_id: receiptId,
+          receipt_line_item_id: receiptLineItemId,
           name: transaction.name,
           description: transaction.name,
           amount: transaction.amount,
