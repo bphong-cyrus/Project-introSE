@@ -49,6 +49,14 @@ Return exactly one JSON object (no markdown and no explanation) with this schema
 EXPENSE CATEGORIES (use only for a negative amount): ${expenseCats}
 INCOME CATEGORIES (use only for a positive amount): ${incomeCats}
 
+CONFIDENCE SCORING RULES (CRITICAL):
+- When you can clearly read/identify a field from the image, confidence MUST be 60-95.
+- When you CANNOT read or are UNCERTAIN about a field, confidence should be 10-30.
+- Common mistakes: Do NOT return low confidence (10-30) for fields you CAN clearly see.
+- The confidence score reflects how certain YOU ARE, not the quality of the receipt.
+- Example: If you clearly see "150,000 VND" on the receipt, return "amount": 150000 with confidence >= 70.
+- Example: If the merchant name is blurry or missing, return empty string with confidence 10-30.
+
 Requirements:
 - Prefer the final total/grand total on receipts and the transaction amount on bank screenshots.
 - The sign is the source of truth for type. Keep transaction_type consistent with it.
@@ -124,13 +132,19 @@ function safeParseJson(text) {
   }
 }
 
-function clampConfidence(value, fallback = 30) {
+function clampConfidence(value, fallback = 60) {
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
-  return Math.max(0, Math.min(100, Math.round(number)));
+  const rounded = Math.max(0, Math.min(100, Math.round(number)));
+  // Nếu AI trả về confidence quá thấp (<20) nhưng field hợp lệ,
+  // có thể AI không hiểu yêu cầu - boost lên minimum 60
+  if (rounded < 20 && fallback >= 60) return 60;
+  return rounded;
 }
 
 function confidenceFor(value, isValid) {
+  // Khi field hợp lệ: fallback = 60 (thay vì 30)
+  // Khi field không hợp lệ: fallback = 15
   const confidence = clampConfidence(value, isValid ? 60 : 15);
   // A model must not mark a field as highly confident when it was absent.
   return isValid ? confidence : Math.min(confidence, 30);

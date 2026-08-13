@@ -6,7 +6,7 @@ const controller = require('../controllers/aiScanner.controller');
 
 const router = express.Router();
 
-const MAX_BYTES = Number(process.env.MAX_UPLOAD_BYTES) || 4 * 1024 * 1024; // 4 MB
+const MAX_BYTES = Number(process.env.MAX_UPLOAD_BYTES) || 20 * 1024 * 1024; // 20 MB
 const MAX_MB = (MAX_BYTES / 1024 / 1024).toFixed(0);
 
 // Health / readiness

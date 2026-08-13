@@ -12,7 +12,7 @@ if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 
-const MAX_BYTES = Number(process.env.MAX_UPLOAD_BYTES) || 4 * 1024 * 1024; // 4 MB
+const MAX_BYTES = Number(process.env.MAX_UPLOAD_BYTES) || 20 * 1024 * 1024; // 20 MB - hỗ trợ ảnh lớn
 
 const ALLOWED_MIME = new Set([
   'image/jpeg',
