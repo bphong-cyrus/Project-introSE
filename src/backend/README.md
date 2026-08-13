@@ -163,15 +163,21 @@ src/backend/
 └── src/
     ├── server.js              # Express app entry point
     ├── routes/
-    │   └── aiScanner.routes.js
+    │   ├── aiScanner.routes.js
+    │   └── report.routes.js
     ├── controllers/
-    │   └── aiScanner.controller.js   # Entry handlers
+    │   ├── aiScanner.controller.js   # AI scanner handlers
+    │   └── report.controller.js      # Excel report export handlers
     ├── services/
     │   ├── geminiClient.js           # Gemini API client
     │   ├── geminiKeyPool.js         # Key rotation + failover
-    │   └── receiptParser.js         # Prompt + JSON parsing + category mapping
+    │   ├── receiptParser.js         # Prompt + JSON parsing + category mapping
+    │   ├── reportExportService.js   # Excel workbook generation
+    │   ├── chartRenderer.js         # PNG chart rendering for Excel
+    │   └── supabaseClient.js        # Supabase user-scoped clients
     └── middleware/
         ├── upload.js          # Multer: multipart handling, 4MB limit
+        ├── requireSupabaseAuth.js # Bearer token auth for report export
         └── errorHandler.js    # Centralised JSON error responses
 ```
 
@@ -185,6 +191,49 @@ src/backend/
 | GET | `/api/ai-scanner/health` | Key configured? Pool state? |
 | GET | `/api/ai-scanner/categories` | List of expense/income categories |
 | POST | `/api/ai-scanner/analyze` | Upload receipt image → extract data |
+| GET | `/api/reports/health` | Report export readiness |
+| POST | `/api/reports/export` | Create monthly Excel report, requires Supabase Bearer token |
+| GET | `/api/reports/exports/:exportId/download` | Download generated Excel report, requires Supabase Bearer token |
+
+### POST /api/reports/export
+
+**Request**: JSON, header `Authorization: Bearer <Supabase access token>`
+
+```json
+{ "month": 8, "year": 2026 }
+```
+
+**Response thành công**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "exportId": "uuid",
+    "fileName": "SmartSpendAI-user-2026-08.xlsx",
+    "downloadUrl": "/api/reports/exports/uuid/download",
+    "summary": {
+      "month": 8,
+      "year": 2026,
+      "transactionCount": 12,
+      "incomeTransactionCount": 2,
+      "totalIncome": 15000000,
+      "totalExpense": 4300000,
+      "totalBudget": 7000000,
+      "generatedAt": "2026-08-13T00:00:00.000Z"
+    }
+  }
+}
+```
+
+Excel workbook gồm các sheet:
+
+- `Tổng quan`
+- `Giao dịch trong tháng`
+- `Thu nhập trong tháng`
+- `Hạn mức ngân sách`
+- `Toàn bộ transactions`
+- `Biểu đồ` với bar/pie/line chart dạng PNG nhúng trong Excel
 
 ### POST /api/ai-scanner/analyze
 

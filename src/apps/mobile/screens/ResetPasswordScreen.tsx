@@ -1,5 +1,5 @@
 // SmartSpend AI - Reset Password Screen
-// UC01: Set New Password After OTP Verification
+// UC03: Set New Password After OTP Verification
 // Features:
 // - New password input
 // - Confirm password input
@@ -25,14 +25,14 @@ import { useAuth } from '../../../state/AuthContext';
 
 interface ResetPasswordScreenProps {
   email: string;
-  otpToken: string;
+  verificationToken: string; // Token từ OTP verification
   onSuccess: () => void;
   onBack: () => void;
 }
 
 const ResetPasswordScreen: React.FC<ResetPasswordScreenProps> = ({
   email,
-  otpToken,
+  verificationToken,
   onSuccess,
   onBack,
 }) => {
@@ -134,21 +134,27 @@ const ResetPasswordScreen: React.FC<ResetPasswordScreenProps> = ({
       return;
     }
 
-    const result = await resetPassword(email, newPassword, otpToken);
+    console.log('Calling resetPassword with:', { email, verificationToken: verificationToken?.substring(0, 20) + '...' });
+
+    const result = await resetPassword(email, newPassword, verificationToken);
+    console.log('resetPassword result:', result);
 
     if (result.success) {
+      // Hiển thị alert thành công và tự động chuyển trang
       Alert.alert(
         'Thành công!',
         'Mật khẩu của bạn đã được đặt lại.',
-        [
-          {
-            text: 'Đăng nhập ngay',
-            onPress: onSuccess,
-          },
-        ]
+        [{ text: 'OK' }]
       );
+      console.log('ResetPasswordScreen - onSuccess called, navigating...');
+      // Tự động chuyển trang sau 1.5 giây
+      setTimeout(() => {
+        console.log('ResetPasswordScreen - executing onSuccess');
+        onSuccess();
+      }, 1500);
     } else {
-      Alert.alert('Lỗi', result.message);
+      // Hiển thị lỗi chi tiết
+      Alert.alert('Lỗi đặt lại mật khẩu', result.message || 'Vui lòng thử lại sau.');
     }
   };
 

@@ -10,6 +10,7 @@ node_modules/
 
 # Local uploads
 uploads/
+generated-reports/
 
 # Logs
 *.log

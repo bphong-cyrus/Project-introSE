@@ -208,6 +208,11 @@ GEMINI_KEY_COOLDOWN_MS=60000
 PORT=4000
 ALLOWED_ORIGINS=http://localhost:8081,http://localhost:19006,http://10.0.2.2:8081
 MAX_UPLOAD_BYTES=4194304
+# Optional override for Report & Export Controller.
+# If omitted, backend reads the existing mobile config in
+# src/data/datasources/supabase/supabase.ts.
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=PASTE-SUPABASE-ANON-KEY
 ```
 
 Có thể dùng một key legacy:
@@ -215,6 +220,17 @@ Có thể dùng một key legacy:
 ```env
 GOOGLE_API_KEY=PASTE-KEY-1
 ```
+
+`SUPABASE_URL` và `SUPABASE_ANON_KEY` được backend dùng cho Report & Export Controller. Nếu không khai báo trong `.env`, backend tự đọc config hiện có ở `src/data/datasources/supabase/supabase.ts`. Backend vẫn xác thực người dùng bằng Supabase access token gửi từ mobile, sau đó truy vấn qua RLS của chính user đó.
+
+Nếu live database có constraint riêng cho `report_exports.export_type`, có thể đặt:
+
+```env
+REPORT_EXPORT_TYPE=excel
+REPORT_EXPORT_STATUS=success
+```
+
+Backend mặc định dùng `export_type = excel`, `status = success` và có fallback cho một số giá trị phổ biến, nhưng tốt nhất là constraint DB cho phép hai giá trị này.
 
 Không commit `.env` lên Git.
 
@@ -292,6 +308,61 @@ src/data/datasources/supabase/ai_scan_logs_uc17.sql
 
 File này bổ sung cột log còn thiếu cho `scan_logs`, bucket `receipt-images`,
 grants/RLS policies cho user/admin và các trường relabel/review.
+
+### Report Export SQL
+
+Trang Settings dùng Backend Report & Export Controller để tạo Excel report và ghi log vào bảng `report_exports`.
+Schema hiện tại cần có bảng:
+
+```text
+report_exports(report_export_id, user_id, export_type, period_start, period_end, file_url, status, created_at)
+```
+
+Nếu dùng Supabase project mới, bảo đảm RLS owner policy cho bảng này tồn tại:
+
+```sql
+alter table public.report_exports enable row level security;
+
+drop policy if exists report_exports_owner on public.report_exports;
+create policy report_exports_owner
+  on public.report_exports
+  for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+```
+
+Nếu bảng chưa tồn tại, tạo tối thiểu:
+
+```sql
+create table if not exists public.report_exports (
+  report_export_id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  export_type varchar not null,
+  period_start date not null,
+  period_end date not null,
+  file_url text,
+  status varchar not null default 'completed',
+  created_at timestamptz not null default now()
+);
+```
+
+Nếu bảng đã có check constraint cũ không cho phép `excel`, cập nhật constraint:
+
+```sql
+alter table public.report_exports
+  drop constraint if exists report_exports_export_type_check;
+
+alter table public.report_exports
+  add constraint report_exports_export_type_check
+  check (export_type in ('excel', 'xlsx', 'report', 'monthly_report', 'transactions', 'csv', 'pdf'));
+
+alter table public.report_exports
+  drop constraint if exists report_exports_status_check;
+
+alter table public.report_exports
+  add constraint report_exports_status_check
+  check (status in ('success', 'completed', 'ready', 'done', 'generated', 'finished', 'pending', 'failed'));
+```
 
 ### Các patch cũ
 
