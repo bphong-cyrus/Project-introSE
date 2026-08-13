@@ -24,10 +24,11 @@ import {
   ForgotPasswordScreen,
   OTPScreen,
   ResetPasswordScreen,
+  ChangePasswordScreen,
 } from './screens';
 
 // Main App Screens & Components
-import { HomeScreen, ProfileScreen, BudgetScreen, NotificationCenterScreen } from './screens';
+import { HomeScreen, ProfileScreen, BudgetScreen, NotificationCenterScreen, SettingsScreen } from './screens';
 import { BottomTabBar } from './components';
 import { BOTTOM_TAB_BAR_HEIGHT } from './navigation/BottomTabBar';
 import { AddTransactionScreen } from '../../modules/transactions';
@@ -40,7 +41,7 @@ import { Transaction } from '../../shared/types';
 type TabName = 'Home' | 'Transactions' | 'Add' | 'Budget' | 'Profile';
 type AddFlowScreen = 'main' | 'ai-scanner' | 'ai-result';
 type HistoryScreen = 'list' | 'detail' | 'edit';
-type AuthScreen = 'login' | 'register' | 'forgotPassword' | 'otp' | 'resetPassword' | 'profileSetup';
+type AuthScreen = 'login' | 'register' | 'forgotPassword' | 'otp' | 'resetPassword' | 'profileSetup' | 'changePassword';
 
 // Inner app component that uses auth context
 const AppContent: React.FC = () => {
@@ -49,7 +50,11 @@ const AppContent: React.FC = () => {
   // Auth navigation state
   const [authScreen, setAuthScreen] = useState<AuthScreen>('login');
   const [pendingEmail, setPendingEmail] = useState('');
+  const [pendingOtpPurpose, setPendingOtpPurpose] = useState<'register' | 'resetPassword' | 'changePassword'>('register');
+  const [verificationToken, setVerificationToken] = useState<string>('');
   const [showSplash, setShowSplash] = useState(true);
+  const [otpBackTarget, setOtpBackTarget] = useState<'login' | 'profile'>('login');
+  const [resetPasswordSuccessTarget, setResetPasswordSuccessTarget] = useState<'login' | 'profile'>('login');
 
   // Main app state (same as before)
   const [activeTab, setActiveTab] = useState<TabName>('Home');
@@ -60,6 +65,8 @@ const AppContent: React.FC = () => {
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [selectedHistoryDate, setSelectedHistoryDate] = useState<Date | null>(null);
   const [showNotificationCenter, setShowNotificationCenter] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
 
   useEffect(() => {
     if (authState === 'authenticated') {
@@ -71,6 +78,7 @@ const AppContent: React.FC = () => {
       setSelectedTransaction(null);
       setSelectedHistoryDate(null);
       setShowNotificationCenter(false);
+      setShowSettings(false);
     }
   }, [authState]);
 
@@ -92,13 +100,29 @@ const AppContent: React.FC = () => {
     setAuthScreen('forgotPassword');
   }, []);
 
-  const navigateToOTP = useCallback((email: string) => {
-    setPendingEmail(email);
-    setAuthScreen('otp');
+  const navigateToResetPassword = useCallback((token: string) => {
+    setVerificationToken(token);
+    setAuthScreen('resetPassword');
   }, []);
 
-  const navigateToResetPassword = useCallback(() => {
-    setAuthScreen('resetPassword');
+  const navigateToChangePassword = useCallback(() => {
+    setAuthScreen('changePassword');
+  }, []);
+
+  // Quay về trang chủ
+  const navigateToHome = useCallback(() => {
+    setAuthScreen('login'); // Reset authScreen để thoát khỏi auth flow
+    setActiveTab('Home');
+    setShowChangePassword(false);
+  }, []);
+
+  const navigateToOTP = useCallback((email: string, purpose: 'register' | 'resetPassword' | 'changePassword' = 'register', backTarget: 'login' | 'profile' = 'login') => {
+    setPendingEmail(email);
+    setPendingOtpPurpose(purpose);
+    setOtpBackTarget(backTarget);
+    // Khi thay đổi mật khẩu thành công thì quay về profile, không phải login
+    setResetPasswordSuccessTarget(purpose === 'changePassword' ? 'profile' : 'login');
+    setAuthScreen('otp');
   }, []);
 
   const navigateToProfileSetup = useCallback(() => {
@@ -113,6 +137,7 @@ const AppContent: React.FC = () => {
   // Tab navigation handlers (same as before)
   const handleTabPress = (tab: TabName) => {
     setShowNotificationCenter(false);
+    setShowSettings(false);
     setActiveTab(tab);
     setAddFlowScreen('main');
     if (tab !== 'Transactions') {
@@ -135,6 +160,8 @@ const AppContent: React.FC = () => {
   };
 
   const handleAddPress = () => {
+    setShowNotificationCenter(false);
+    setShowSettings(false);
     setActiveTab('Add');
     setAddFlowScreen('main');
   };
@@ -222,25 +249,33 @@ const AppContent: React.FC = () => {
         return (
           <ForgotPasswordScreen
             onBackToLogin={navigateToLogin}
-            onNavigateToOTP={navigateToOTP}
+            onNavigateToOTP={(email) => navigateToOTP(email, 'resetPassword')}
           />
         );
       case 'otp':
         return (
           <OTPScreen
             email={pendingEmail}
-            purpose="register"
-            onVerified={navigateToProfileSetup}
-            onBack={navigateToLogin}
+            purpose={pendingOtpPurpose}
+            onVerified={pendingOtpPurpose === 'register' ? navigateToProfileSetup : navigateToLogin}
+            onVerifiedWithToken={pendingOtpPurpose === 'resetPassword' || pendingOtpPurpose === 'changePassword' ? navigateToResetPassword : undefined}
+            onBack={otpBackTarget === 'profile' ? () => setAuthScreen('changePassword') : navigateToLogin}
           />
         );
       case 'resetPassword':
         return (
           <ResetPasswordScreen
             email={pendingEmail}
-            otpToken=""
-            onSuccess={navigateToLogin}
-            onBack={navigateToLogin}
+            verificationToken={verificationToken}
+            onSuccess={resetPasswordSuccessTarget === 'profile' ? navigateToHome : navigateToLogin}
+            onBack={resetPasswordSuccessTarget === 'profile' ? () => setShowChangePassword(false) : navigateToLogin}
+          />
+        );
+      case 'changePassword':
+        return (
+          <ChangePasswordScreen
+            onBack={() => setActiveTab('Profile')}
+            onNavigateToOTP={(email) => navigateToOTP(email, 'changePassword', 'profile')}
           />
         );
       case 'profileSetup':
@@ -265,6 +300,10 @@ const AppContent: React.FC = () => {
   const renderMainContent = () => {
     if (showNotificationCenter) {
       return <NotificationCenterScreen onBack={() => setShowNotificationCenter(false)} />;
+    }
+
+    if (showSettings) {
+      return <SettingsScreen onBack={() => setShowSettings(false)} />;
     }
 
     // Transaction History content
@@ -338,6 +377,7 @@ const AppContent: React.FC = () => {
             onTabChange={handleTabPress}
             onDateSelect={handleHomeDateSelect}
             onNotificationsPress={() => setShowNotificationCenter(true)}
+            onSettingsPress={() => setShowSettings(true)}
           />
         );
       case 'Transactions':
@@ -345,13 +385,22 @@ const AppContent: React.FC = () => {
       case 'Budget':
         return <BudgetScreen />;
       case 'Profile':
-        return <ProfileScreen />;
+        if (showChangePassword) {
+          return (
+            <ChangePasswordScreen
+              onBack={() => setShowChangePassword(false)}
+              onNavigateToOTP={(email) => navigateToOTP(email, 'changePassword', 'profile')}
+            />
+          );
+        }
+        return <ProfileScreen onNavigateToChangePassword={() => setShowChangePassword(true)} />;
       default:
         return (
           <HomeScreen
             onTabChange={handleTabPress}
             onDateSelect={handleHomeDateSelect}
             onNotificationsPress={() => setShowNotificationCenter(true)}
+            onSettingsPress={() => setShowSettings(true)}
           />
         );
     }
@@ -374,8 +423,9 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // Show auth screens if not authenticated
-  if (authState === 'unauthenticated') {
+  // Show auth screens if not authenticated OR if change password flow is active (even when authenticated)
+  const isInAuthFlow = authScreen !== 'login' && authScreen !== 'profileSetup';
+  if (authState === 'unauthenticated' || isInAuthFlow) {
     return (
       <View style={styles.container}>
         {renderAuthScreen()}

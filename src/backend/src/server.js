@@ -9,6 +9,7 @@ const express = require('express');
 const cors = require('cors');
 
 const aiScannerRoutes = require('./routes/aiScanner.routes');
+const reportRoutes = require('./routes/report.routes');
 const errorHandler = require('./middleware/errorHandler');
 
 const PORT = Number(process.env.PORT) || 4000;
@@ -46,6 +47,9 @@ app.get('/health', (_req, res) => {
 // AI Scanner routes (UC13 / SAD §4.2.6)
 app.use('/api/ai-scanner', aiScannerRoutes);
 
+// Report & Export routes (UC12 / SAD §4.2.7)
+app.use('/api/reports', reportRoutes);
+
 // 404
 app.use((req, res) => {
   res.status(404).json({ success: false, error: 'Not found', path: req.path });
@@ -58,6 +62,7 @@ app.listen(PORT, () => {
   console.log(`[smartspend-backend] listening on http://localhost:${PORT}`);
   console.log(`  health   : GET  /health`);
   console.log(`  scanner  : POST /api/ai-scanner/analyze  (multipart/form-data)`);
+  console.log(`  reports  : POST /api/reports/export  (Bearer Supabase access token)`);
 });
 
 module.exports = app;

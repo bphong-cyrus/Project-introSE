@@ -63,19 +63,14 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
     }
 
     const result = await forgotPassword(email);
+    console.log('ForgotPassword result:', result);
 
     if (result.success) {
       setSuccessMessage(result.message);
-      Alert.alert(
-        'Gửi thành công!',
-        'Vui lòng kiểm tra email của bạn để lấy mã OTP đặt lại mật khẩu.',
-        [
-          {
-            text: 'Tiếp tục',
-            onPress: () => onNavigateToOTP(email),
-          },
-        ]
-      );
+      // Tự động chuyển sang trang OTP sau khi gửi thành công
+      setTimeout(() => {
+        onNavigateToOTP(email);
+      }, 500);
     } else {
       Alert.alert('Lỗi', result.message);
     }

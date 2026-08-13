@@ -21,9 +21,10 @@ interface AuthContextValue {
   register: (email: string, password: string, fullName: string) => Promise<{ success: boolean; message: string }>;
   logout: () => Promise<void>;
   verifyOTP: (email: string, token: string) => Promise<{ success: boolean; message: string }>;
-  resendOTP: (email: string) => Promise<{ success: boolean; message: string }>;
+  resendOTP: (email: string, type?: 'signup' | 'reset_password') => Promise<{ success: boolean; message: string }>;
   forgotPassword: (email: string) => Promise<{ success: boolean; message: string }>;
-  resetPassword: (email: string, newPassword: string, token: string) => Promise<{ success: boolean; message: string }>;
+  resetPassword: (email: string, newPassword: string, verificationToken: string) => Promise<{ success: boolean; message: string }>;
+  verifyResetPasswordOTP: (email: string, otpCode: string) => Promise<{ success: boolean; message: string; verificationToken?: string }>;
   googleLogin: () => Promise<{ success: boolean; message: string }>;
 
   // Profile methods
@@ -33,6 +34,10 @@ interface AuthContextValue {
   // Utility
   clearError: () => void;
 }
+
+// Edge Function URLs - Cấu hình Supabase Edge Functions
+const SUPABASE_FUNCTIONS_URL = 'https://ndtkwtsmseibznarqvsw.supabase.co/functions/v1';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kdGt3dHNtc2VpYnpuYXJxdnN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1NTE0MzEsImV4cCI6MjEwMDEyNzQzMX0.ETM2DZpUh1bIj_QsPR1NusQyFmEYgRtOqqqJxZlPQHw';
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
@@ -387,12 +392,61 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
-  // Verify OTP token
+  // ========================================================================
+  // LUỒNG QUÊN MẬT KHẨU (UC03) - Sử dụng OTP 6 số
+  // ========================================================================
+
+  // Bước 1: Gửi mã OTP qua email (Edge Function)
+  const forgotPassword = useCallback(async (email: string): Promise<{ success: boolean; message: string }> => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        setError('Định dạng email không hợp lệ.');
+        return { success: false, message: 'Định dạng email không hợp lệ.' };
+      }
+
+      // Gọi Edge Function để gửi OTP qua Resend
+      const response = await fetch(`${SUPABASE_FUNCTIONS_URL}/send-password-reset-otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setError(result.error || 'Không thể gửi mã OTP. Vui lòng thử lại.');
+        return { success: false, message: result.error || 'Không thể gửi mã OTP. Vui lòng thử lại.' };
+      }
+
+      return {
+        success: true,
+        message: 'Mã OTP đã được gửi đến email của bạn. Vui lòng kiểm tra hộp thư đến (hoặc spam).',
+      };
+    } catch (err: any) {
+      const message = err.message || 'Không thể gửi mã OTP. Vui lòng thử lại sau.';
+      setError(message);
+      return { success: false, message };
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Bước 2: Xác thực OTP (cho cả đăng ký và reset password)
   const verifyOTP = useCallback(async (email: string, token: string): Promise<{ success: boolean; message: string }> => {
     setIsLoading(true);
     setError(null);
 
     try {
+      // Sử dụng Supabase Auth OTP cho signup
       const { data, error: verifyError } = await supabase.auth.verifyOtp({
         email,
         token,
@@ -414,23 +468,93 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
-  // Resend OTP
-  const resendOTP = useCallback(async (email: string): Promise<{ success: boolean; message: string }> => {
+  // Bước 2b: Xác thực OTP cho reset password (gọi Edge Function)
+  const verifyResetPasswordOTP = useCallback(async (email: string, otpCode: string): Promise<{ success: boolean; message: string; verificationToken?: string }> => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const { error: resendError } = await supabase.auth.resend({
-        type: 'signup',
-        email,
-      });
-
-      if (resendError) {
-        setError(resendError.message);
-        return { success: false, message: resendError.message };
+      // Validate inputs
+      if (!otpCode || otpCode.length !== 6 || !/^\d{6}$/.test(otpCode)) {
+        setError('Mã OTP phải là 6 chữ số.');
+        return { success: false, message: 'Mã OTP phải là 6 chữ số.' };
       }
 
-      return { success: true, message: 'Đã gửi lại mã xác thực!' };
+      // Gọi Edge Function để verify OTP
+      const response = await fetch(`${SUPABASE_FUNCTIONS_URL}/verify-password-reset-otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          otp_code: otpCode
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setError(result.error || 'Mã OTP không hợp lệ hoặc đã hết hạn.');
+        return { success: false, message: result.error || 'Mã OTP không hợp lệ hoặc đã hết hạn.' };
+      }
+
+      return {
+        success: true,
+        message: 'Xác thực OTP thành công!',
+        verificationToken: result.verification_token,
+      };
+    } catch (err: any) {
+      const message = err.message || 'Không thể xác thực OTP. Vui lòng thử lại.';
+      setError(message);
+      return { success: false, message };
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Bước 3: Gửi lại mã OTP
+  const resendOTP = useCallback(async (email: string, type: 'signup' | 'reset_password' = 'signup'): Promise<{ success: boolean; message: string }> => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      if (type === 'reset_password') {
+        // Gọi Edge Function để gửi lại OTP reset password
+        const response = await fetch(`${SUPABASE_FUNCTIONS_URL}/send-password-reset-otp`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({ email: email.trim().toLowerCase() }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          setError(result.error || 'Không thể gửi lại mã OTP. Vui lòng thử lại.');
+          return { success: false, message: result.error || 'Không thể gửi lại mã OTP. Vui lòng thử lại.' };
+        }
+
+        return { success: true, message: 'Đã gửi lại mã OTP đến email của bạn.' };
+      } else {
+        // Sử dụng Supabase Auth cho signup
+        const { error: resendError } = await supabase.auth.resend({
+          type: 'signup',
+          email,
+        });
+
+        if (resendError) {
+          setError(resendError.message);
+          return { success: false, message: resendError.message };
+        }
+
+        return { success: true, message: 'Đã gửi lại mã xác thực!' };
+      }
     } catch (err: any) {
       const message = err.message || 'Gửi lại mã thất bại';
       setError(message);
@@ -440,65 +564,66 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
-  // Forgot password - request reset email
-  const forgotPassword = useCallback(async (email: string): Promise<{ success: boolean; message: string }> => {
+  // Bước 4: Đặt lại mật khẩu với verification token (gọi Edge Function)
+  const resetPassword = useCallback(async (email: string, newPassword: string, verificationToken: string): Promise<{ success: boolean; message: string }> => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: 'smartspendai://reset-password',
-      });
-
-      if (resetError) {
-        setError(resetError.message);
-        return { success: false, message: resetError.message };
+      // Decode token để lấy user_id
+      const tokenParts = verificationToken.split('.');
+      if (tokenParts.length !== 3) {
+        setError('Token không hợp lệ. Vui lòng xác thực OTP lại.');
+        return { success: false, message: 'Token không hợp lệ. Vui lòng xác thực OTP lại.' };
       }
 
-      return {
-        success: true,
-        message: 'Đã gửi liên kết đặt lại mật khẩu đến email của bạn!',
-      };
+      const payload = JSON.parse(atob(tokenParts[1]));
+      const now = Math.floor(Date.now() / 1000);
+
+      if (payload.exp && payload.exp < now) {
+        setError('Token đã hết hạn. Vui lòng xác thực OTP lại.');
+        return { success: false, message: 'Token đã hết hạn. Vui lòng xác thực OTP lại.' };
+      }
+
+      if (payload.purpose !== 'reset_password') {
+        setError('Token không hợp lệ cho mục đích đặt lại mật khẩu.');
+        return { success: false, message: 'Token không hợp lệ cho mục đích đặt lại mật khẩu.' };
+      }
+
+      const userId = payload.user_id;
+      if (!userId) {
+        setError('Token không chứa thông tin user. Vui lòng xác thực OTP lại.');
+        return { success: false, message: 'Token không chứa thông tin user. Vui lòng xác thực OTP lại.' };
+      }
+
+      // Gọi Edge Function để đặt lại mật khẩu
+      const response = await fetch(`${SUPABASE_FUNCTIONS_URL}/reset-password-with-token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          new_password: newPassword,
+          verification_token: verificationToken,
+        }),
+      });
+
+      const result = await response.json();
+      console.log('reset-password-with-token response:', { status: response.status, result });
+
+      // Kiểm tra: nếu có error trong body hoặc status không phải 200-299
+      if (!response.ok || result.error) {
+        const errorMsg = result.error || 'Không thể đặt lại mật khẩu. Vui lòng thử lại.';
+        setError(errorMsg);
+        return { success: false, message: errorMsg };
+      }
+
+      return { success: true, message: 'Đặt lại mật khẩu thành công! Vui lòng đăng nhập lại.' };
     } catch (err: any) {
-      const message = err.message || 'Yêu cầu thất bại';
-      setError(message);
-      return { success: false, message };
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  // Reset password with token
-  const resetPassword = useCallback(async (email: string, newPassword: string, token: string): Promise<{ success: boolean; message: string }> => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      // Verify the token first
-      const { error: verifyError } = await supabase.auth.verifyOtp({
-        email,
-        token,
-        type: 'recovery',
-      });
-
-      if (verifyError) {
-        setError(verifyError.message);
-        return { success: false, message: verifyError.message };
-      }
-
-      // Update password
-      const { error: updateError } = await supabase.auth.updateUser({
-        password: newPassword,
-      });
-
-      if (updateError) {
-        setError(updateError.message);
-        return { success: false, message: updateError.message };
-      }
-
-      return { success: true, message: 'Đặt lại mật khẩu thành công!' };
-    } catch (err: any) {
-      const message = err.message || 'Đặt lại mật khẩu thất bại';
+      const message = err.message || 'Đặt lại mật khẩu thất bại. Vui lòng thử lại.';
       setError(message);
       return { success: false, message };
     } finally {
@@ -661,6 +786,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         resendOTP,
         forgotPassword,
         resetPassword,
+        verifyResetPasswordOTP,
         googleLogin,
         updateProfile,
         completeOnboarding,

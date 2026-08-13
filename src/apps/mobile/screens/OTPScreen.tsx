@@ -1,11 +1,11 @@
 // SmartSpend AI - OTP Verification Screen
-// UC01: OTP Verification for Registration and Password Reset
+// UC01/UC03: OTP Verification for Registration and Password Reset
 // Features:
 // - 6-digit OTP input
 // - Auto-focus between digits
 // - Resend OTP functionality
 // - Countdown timer for resend
-// - Navigate based on purpose (register/reset)
+// - Navigate based on purpose (register/resetPassword)
 
 import React, { useState, useRef, useEffect } from 'react';
 import {
@@ -27,6 +27,7 @@ interface OTPScreenProps {
   email: string;
   purpose: 'register' | 'resetPassword';
   onVerified: () => void;
+  onVerifiedWithToken?: (verificationToken: string) => void; // Callback cho reset password với token
   onBack: () => void;
 }
 
@@ -34,9 +35,10 @@ const OTPScreen: React.FC<OTPScreenProps> = ({
   email,
   purpose,
   onVerified,
+  onVerifiedWithToken,
   onBack,
 }) => {
-  const { verifyOTP, resendOTP, isLoading } = useAuth();
+  const { verifyOTP, resendOTP, verifyResetPasswordOTP, isLoading } = useAuth();
 
   // OTP digits state
   const [digits, setDigits] = useState(['', '', '', '', '', '']);
@@ -111,15 +113,37 @@ const OTPScreen: React.FC<OTPScreenProps> = ({
       return;
     }
 
-    const result = await verifyOTP(email, code);
+    // Kiểm tra cả 'resetPassword' và 'changePassword' đều dùng Edge Function
+    if (purpose === 'resetPassword' || purpose === 'changePassword') {
+      // Sử dụng Edge Function để verify OTP cho reset/change password
+      const result = await verifyResetPasswordOTP(email, code);
+      console.log('verifyResetPasswordOTP result:', result);
 
-    if (result.success) {
-      onVerified();
+      if (result.success) {
+        // Nếu có callback với token, gọi callback
+        if (onVerifiedWithToken && result.verificationToken) {
+          onVerifiedWithToken(result.verificationToken);
+        } else {
+          onVerified();
+        }
+      } else {
+        setError(result.message);
+        // Clear inputs on error
+        setDigits(['', '', '', '', '', '']);
+        inputRefs.current[0]?.focus();
+      }
     } else {
-      setError(result.message);
-      // Clear inputs on error
-      setDigits(['', '', '', '', '', '']);
-      inputRefs.current[0]?.focus();
+      // Sử dụng Supabase Auth để verify OTP cho registration
+      const result = await verifyOTP(email, code);
+
+      if (result.success) {
+        onVerified();
+      } else {
+        setError(result.message);
+        // Clear inputs on error
+        setDigits(['', '', '', '', '', '']);
+        inputRefs.current[0]?.focus();
+      }
     }
   };
 
@@ -128,7 +152,9 @@ const OTPScreen: React.FC<OTPScreenProps> = ({
     if (!canResend) return;
 
     setError('');
-    const result = await resendOTP(email);
+    // Cả 'resetPassword' và 'changePassword' đều dùng 'reset_password'
+    const otpType = (purpose === 'resetPassword' || purpose === 'changePassword') ? 'reset_password' : 'signup';
+    const result = await resendOTP(email, otpType);
 
     if (result.success) {
       Alert.alert('Thành công', result.message);

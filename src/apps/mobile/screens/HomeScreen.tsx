@@ -290,9 +290,10 @@ interface HomeScreenProps {
   onTabChange?: (tab: TabName) => void;
   onDateSelect?: (date: Date) => void;
   onNotificationsPress?: () => void;
+  onSettingsPress?: () => void;
 }
 
-const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange, onDateSelect, onNotificationsPress }) => {
+const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange, onDateSelect, onNotificationsPress, onSettingsPress }) => {
   const [activeTab, setActiveTab] = useState<TabName>('Home');
   const now = new Date();
   const [selectedChartMonth, setSelectedChartMonth] = useState(now.getMonth());
@@ -448,7 +449,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange, onDateSelect, onNo
                   </View>
                 ) : null}
               </TouchableOpacity>
-              <TouchableOpacity style={styles.headerButton}>
+              <TouchableOpacity style={styles.headerButton} onPress={onSettingsPress}>
                 <Ionicons name="settings" size={20} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
