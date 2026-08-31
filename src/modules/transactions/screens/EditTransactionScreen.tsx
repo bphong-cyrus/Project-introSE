@@ -1,7 +1,7 @@
 // SmartSpend AI - Edit Transaction Screen (Frame 11)
 // UC11: Edit existing transaction - Save button at bottom, no top bar save
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Animated,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
@@ -24,13 +25,17 @@ import AmountInput from '../components/AmountInput';
 import CategoryPicker from '../components/CategoryPicker';
 import DateTimeInput from '../components/DateTimeInput';
 import NoteInput from '../components/NoteInput';
-import { formatVNDInput } from '../utils';
 
 interface EditTransactionScreenProps {
   transaction: Transaction;
   onBack: () => void;
   onSaved: () => void;
 }
+
+const toAmountInputValue = (value: number): string => {
+  if (!Number.isFinite(value) || value <= 0) return '';
+  return Math.trunc(value).toString();
+};
 
 const EditTransactionScreen: React.FC<EditTransactionScreenProps> = ({
   transaction,
@@ -43,7 +48,7 @@ const EditTransactionScreen: React.FC<EditTransactionScreenProps> = ({
   // Form state - initialize from transaction
   const [transactionType, setTransactionType] = useState<'income' | 'expense'>(transaction.type);
   const [transactionName, setTransactionName] = useState<string>(transaction.name);
-  const [amount, setAmount] = useState<string>(formatVNDInput(transaction.amount));
+  const [amount, setAmount] = useState<string>(toAmountInputValue(transaction.amount));
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(
     transaction.category || null
   );
@@ -54,6 +59,8 @@ const EditTransactionScreen: React.FC<EditTransactionScreenProps> = ({
 
   // Success state
   const [showSuccess, setShowSuccess] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const isSavingRef = useRef(false);
 
   // Animation
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
@@ -71,12 +78,12 @@ const EditTransactionScreen: React.FC<EditTransactionScreenProps> = ({
     if (freshTransaction && !showSuccess) {
       setTransactionType(freshTransaction.type);
       setTransactionName(freshTransaction.name);
-      setAmount(formatVNDInput(freshTransaction.amount));
+      setAmount(toAmountInputValue(freshTransaction.amount));
       setSelectedCategory(freshTransaction.category || null);
       setDateTime(new Date(freshTransaction.date));
       setNote(freshTransaction.note || '');
     }
-  }, [freshTransaction]);
+  }, [freshTransaction, showSuccess]);
 
   // Available categories based on type
   const availableCategories = getCategoriesByType(transactionType);
@@ -98,7 +105,9 @@ const EditTransactionScreen: React.FC<EditTransactionScreenProps> = ({
   }, [onBack]);
 
   // Handle save
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
+    if (isSavingRef.current) return;
+
     // Reset error
     setTransactionNameError('');
     setAmountError('');
@@ -129,24 +138,36 @@ const EditTransactionScreen: React.FC<EditTransactionScreenProps> = ({
       return;
     }
 
-    // Update transaction
-    updateTransaction(transaction.id, {
-      name: trimmedTransactionName,
-      amount: numericAmount,
-      type: transactionType,
-      categoryId: selectedCategory.id,
-      category: selectedCategory,
-      date: dateTime,
-      note: note.trim() || undefined,
-    });
+    try {
+      isSavingRef.current = true;
+      setIsSaving(true);
 
-    // Show success
-    setShowSuccess(true);
+      const saved = await updateTransaction(transaction.id, {
+        name: trimmedTransactionName,
+        amount: numericAmount,
+        type: transactionType,
+        categoryId: selectedCategory.id,
+        category: selectedCategory,
+        date: dateTime,
+        note: note.trim() || undefined,
+      });
 
-    // Navigate back after delay
-    setTimeout(() => {
-      onSaved();
-    }, 1500);
+      if (!saved) {
+        throw new Error('Không thể cập nhật giao dịch trong cơ sở dữ liệu.');
+      }
+
+      // Show success
+      setShowSuccess(true);
+
+      // Navigate back after delay
+      setTimeout(() => {
+        onSaved();
+      }, 1500);
+    } catch (error: any) {
+      isSavingRef.current = false;
+      setIsSaving(false);
+      Alert.alert('Không thể cập nhật giao dịch', error?.message || 'Vui lòng thử lại sau.');
+    }
   }, [amount, selectedCategory, transactionName, transactionType, dateTime, note, transaction.id, updateTransaction, onSaved]);
 
   // Handle type change
@@ -258,12 +279,13 @@ const EditTransactionScreen: React.FC<EditTransactionScreenProps> = ({
         {/* Save Button at Bottom */}
         <View style={styles.bottomContainer}>
           <TouchableOpacity
-            style={styles.saveButton}
+            style={[styles.saveButton, isSaving ? styles.saveButtonDisabled : null]}
             onPress={handleSave}
             activeOpacity={0.8}
+            disabled={isSaving}
           >
             <Ionicons name="checkmark-circle" size={22} color="#FFFFFF" />
-            <Text style={styles.saveButtonText}>Lưu thay đổi</Text>
+            <Text style={styles.saveButtonText}>{isSaving ? 'Đang lưu...' : 'Lưu thay đổi'}</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -324,6 +346,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 16,
     gap: 8,
+  },
+  saveButtonDisabled: {
+    opacity: 0.6,
   },
   saveButtonText: {
     fontSize: 16,

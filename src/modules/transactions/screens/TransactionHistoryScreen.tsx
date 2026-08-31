@@ -89,6 +89,9 @@ const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> = ({
   // Filter transactions based on all criteria
   const filteredTransactions = useMemo(() => {
     let result = [...transactions];
+    const categoryById = new Map(categories.map((category) => [category.id, category]));
+    const getTransactionCategory = (transaction: Transaction) =>
+      categoryById.get(transaction.categoryId) || transaction.category;
 
     // 0. Date selected from Home calendar strip, exact local day only
     if (selectedDate) {
@@ -133,11 +136,7 @@ const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> = ({
         );
         break;
       case 'other':
-        result = result.filter(
-          (t) =>
-            !['income', 'expense'].includes(quickFilter) &&
-            !['exp-cat-1', 'exp-cat-2', 'exp-cat-3', 'exp-cat-4'].includes(t.categoryId || '')
-        );
+        result = result.filter((t) => getTransactionCategory(t)?.isDefault === false);
         break;
     }
 
@@ -191,7 +190,7 @@ const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> = ({
     }
 
     return result;
-  }, [transactions, selectedDate, quickFilter, advancedFilter, debouncedQuery, maxItems]);
+  }, [transactions, categories, selectedDate, quickFilter, advancedFilter, debouncedQuery, maxItems]);
 
   // Check if advanced filter is active
   const isAdvancedFilterActive = useMemo(() => {

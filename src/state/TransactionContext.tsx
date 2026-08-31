@@ -25,30 +25,27 @@ interface TransactionContextValue {
 const TransactionContext = createContext<TransactionContextValue | undefined>(undefined);
 
 const dedupeTransactionsById = (items: Transaction[]): Transaction[] => {
-  const seenIds = new Set<string>();
+  const seen = new Set<string>();
+  const deduped: Transaction[] = [];
 
-  return items.filter((item) => {
-    if (seenIds.has(item.id)) {
-      return false;
-    }
+  for (const item of items) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    deduped.push(item);
+  }
 
-    seenIds.add(item.id);
-    return true;
-  });
+  return deduped;
 };
 
-const upsertTransactionById = (items: Transaction[], nextItem: Transaction): Transaction[] => {
-  let replaced = false;
-  const updatedItems = items.map((item) => {
-    if (item.id !== nextItem.id) {
-      return item;
-    }
-
-    replaced = true;
-    return nextItem;
+const upsertTransactionById = (items: Transaction[], next: Transaction): Transaction[] => {
+  let found = false;
+  const updated = items.map((item) => {
+    if (item.id !== next.id) return item;
+    found = true;
+    return next;
   });
 
-  return dedupeTransactionsById(replaced ? updatedItems : [nextItem, ...items]);
+  return dedupeTransactionsById(found ? updated : [next, ...updated]);
 };
 
 export const TransactionProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -206,7 +203,7 @@ export const TransactionProvider: React.FC<{ children: ReactNode }> = ({ childre
     }
 
     await evaluateBudgetWarnings(existingTransaction);
-    setTransactions(prev => prev.filter(txn => txn.id !== id));
+    setTransactions(prev => dedupeTransactionsById(prev.filter(txn => txn.id !== id)));
   }, [evaluateBudgetWarnings, transactions]);
 
   const getTransaction = useCallback((id: string) => {

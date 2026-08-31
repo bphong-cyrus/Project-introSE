@@ -17,7 +17,7 @@ import { Colors } from '../../../shared/constants/colors';
 import { Transaction } from '../../../shared/types';
 import { toIoniconName } from '../../../shared/utils/icons';
 import { useTransactions } from '../../../state/TransactionContext';
-import { formatVND, formatDateDMY, formatTime12h, formatDateISO } from '../utils';
+import { formatVND, formatDateDMY, formatTime, formatDateISO } from '../utils';
 
 interface TransactionDetailScreenProps {
   transactionId: string;
@@ -196,7 +196,7 @@ const TransactionDetailScreen: React.FC<TransactionDetailScreenProps> = ({
               </View>
               <View style={styles.detailItemContent}>
                 <Text style={styles.detailItemLabel}>Giờ</Text>
-                <Text style={styles.detailItemValue}>{formatTime12h(transaction.date)}</Text>
+                <Text style={styles.detailItemValue}>{formatTime(transaction.date)}</Text>
               </View>
             </View>
           </View>
@@ -229,7 +229,7 @@ const TransactionDetailScreen: React.FC<TransactionDetailScreenProps> = ({
         <View style={styles.metadataCard}>
           <View style={styles.metaRow}>
             <Text style={styles.metaLabel}>Mã giao dịch</Text>
-            <Text style={styles.metaValue}>#{transaction.id.slice(0, 8)}</Text>
+            <Text style={styles.metaValue} selectable>#{transaction.id}</Text>
           </View>
           <View style={styles.metaDivider} />
           <View style={styles.metaRow}>
@@ -451,10 +451,13 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   metaValue: {
+    flex: 1,
+    marginLeft: 12,
     fontSize: 13,
     fontWeight: '500',
     color: Colors.textPrimary,
     fontFamily: 'monospace',
+    textAlign: 'right',
   },
   actionContainer: {
     flexDirection: 'row',

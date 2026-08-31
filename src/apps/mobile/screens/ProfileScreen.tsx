@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Colors } from '../../../shared/constants/colors';
 import { useAuth } from '../../../state/AuthContext';
 import { supabase } from '../../../data/datasources/supabase/supabase';
@@ -66,6 +67,17 @@ const CRITICAL_FEEDBACK_KEYWORDS = [
 ];
 
 const HIGH_PRIORITY_FEEDBACK_CATEGORIES = ['auth', 'budget', 'transactions'];
+const AVATAR_BUCKET = 'avatars';
+const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
+const BASE64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+const SUPPORTED_AVATAR_CONTENT_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/heic',
+  'image/heif',
+]);
 
 const getDefaultFeedbackPriority = (category: string, subject: string, content: string): FeedbackPriority => {
   const normalizedText = `${subject} ${content}`.trim().toLowerCase();
@@ -96,6 +108,108 @@ const getFeedbackPriorityLabel = (priority: FeedbackPriority) => {
     default:
       return 'Thấp';
   }
+};
+
+type AvatarUploadPayload = File | Blob | ArrayBuffer;
+
+type AvatarUploadOptions = {
+  contentType: string;
+  extension: string;
+};
+
+const normalizeImageContentType = (contentType?: string | null, fileNameOrUri = '') => {
+  const normalized = contentType?.split(';')[0]?.trim().toLowerCase();
+  if (normalized === 'image/jpg' || normalized === 'image/pjpeg') return 'image/jpeg';
+  if (normalized?.startsWith('image/')) return normalized;
+
+  const extension = fileNameOrUri.split('?')[0]?.split('.').pop()?.toLowerCase();
+  switch (extension) {
+    case 'png':
+      return 'image/png';
+    case 'webp':
+      return 'image/webp';
+    case 'gif':
+      return 'image/gif';
+    case 'heic':
+      return 'image/heic';
+    case 'heif':
+      return 'image/heif';
+    default:
+      return 'image/jpeg';
+  }
+};
+
+const getExtensionForContentType = (contentType: string, fileNameOrUri = '') => {
+  switch (contentType) {
+    case 'image/png':
+      return 'png';
+    case 'image/webp':
+      return 'webp';
+    case 'image/gif':
+      return 'gif';
+    case 'image/heic':
+      return 'heic';
+    case 'image/heif':
+      return 'heif';
+    default: {
+      const extension = fileNameOrUri.split('?')[0]?.split('.').pop()?.toLowerCase();
+      return extension && /^[a-z0-9]{2,5}$/.test(extension) ? extension : 'jpg';
+    }
+  }
+};
+
+const validateAvatarFile = (contentType: string, fileSize?: number): string | null => {
+  if (!contentType.startsWith('image/')) {
+    return 'File avatar phải là ảnh.';
+  }
+
+  if (!SUPPORTED_AVATAR_CONTENT_TYPES.has(contentType)) {
+    return 'Avatar chỉ hỗ trợ JPG, PNG, WEBP, GIF, HEIC hoặc HEIF.';
+  }
+
+  if (fileSize !== undefined && fileSize > MAX_AVATAR_BYTES) {
+    return 'Ảnh avatar không được vượt quá 5MB.';
+  }
+
+  return null;
+};
+
+const decodeBase64ToBinary = (base64: string): string => {
+  let output = '';
+  let buffer = 0;
+  let bits = 0;
+
+  for (const char of base64.replace(/=+$/g, '')) {
+    const value = BASE64_CHARS.indexOf(char);
+    if (value < 0) continue;
+
+    buffer = (buffer << 6) | value;
+    bits += 6;
+
+    if (bits >= 8) {
+      bits -= 8;
+      output += String.fromCharCode((buffer >> bits) & 0xff);
+    }
+  }
+
+  return output;
+};
+
+const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
+  const cleaned = base64.includes(',')
+    ? base64.slice(base64.indexOf(',') + 1)
+    : base64;
+  const compact = cleaned.replace(/\s/g, '');
+  const binary = typeof globalThis.atob === 'function'
+    ? globalThis.atob(compact)
+    : decodeBase64ToBinary(compact);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return bytes.buffer;
 };
 
 interface ProfileScreenProps {
@@ -182,59 +296,96 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigateToChangePasswor
   };
 
   const uploadAvatarPayload = async (
-    payload: File | Blob,
-    extension = 'jpg',
-    contentType = 'image/jpeg'
-  ) => {
-    if (!user) return;
+    payload: AvatarUploadPayload,
+    options: AvatarUploadOptions
+  ): Promise<boolean> => {
+    if (!user) return false;
+
+    const validationError = validateAvatarFile(options.contentType);
+    if (validationError) {
+      throw new Error(validationError);
+    }
+
+    const filePath = `${user.id}/avatar-${Date.now()}.${options.extension}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(AVATAR_BUCKET)
+      .upload(filePath, payload, {
+        cacheControl: '3600',
+        upsert: true,
+        contentType: options.contentType,
+      });
+
+    if (uploadError) {
+      throw new Error(
+        `${uploadError.message}\n\nHãy kiểm tra bucket Supabase Storage tên "${AVATAR_BUCKET}" và policy upload/select.`
+      );
+    }
+
+    const { data } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(filePath);
+    const publicUrl = data.publicUrl;
+
+    const result = await updateProfile({ avatar: publicUrl });
+    if (!result.success) {
+      throw new Error(result.message);
+    }
+
+    return true;
+  };
+
+  const uploadAvatarFile = async (file: File) => {
+    const contentType = normalizeImageContentType(file.type, file.name);
+    const validationError = validateAvatarFile(contentType, file.size);
+    if (validationError) {
+      Alert.alert('Không thể cập nhật avatar', validationError);
+      return;
+    }
 
     setIsUploadingAvatar(true);
     try {
-      const filePath = `${user.id}/avatar-${Date.now()}.${extension}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(filePath, payload, {
-          cacheControl: '3600',
-          upsert: true,
-          contentType,
-        });
-
-      if (uploadError) {
-        Alert.alert(
-          'Không thể cập nhật avatar',
-          `${uploadError.message}\n\nHãy kiểm tra bucket Supabase Storage tên "avatars" và policy upload/select.`
-        );
-        return;
-      }
-
-      const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
-      const publicUrl = data.publicUrl;
-
-      const result = await updateProfile({ avatar: publicUrl });
-      if (result.success) {
+      const extension = getExtensionForContentType(contentType, file.name);
+      const uploaded = await uploadAvatarPayload(file, { contentType, extension });
+      if (uploaded) {
         Alert.alert('Thành công', 'Avatar đã được cập nhật.');
-      } else {
-        Alert.alert('Lỗi', result.message);
       }
     } catch (error: any) {
-      Alert.alert('Lỗi', error?.message || 'Không thể cập nhật avatar.');
+      Alert.alert('Không thể cập nhật avatar', error?.message || 'Vui lòng thử lại sau.');
     } finally {
       setIsUploadingAvatar(false);
       setShowAvatarSheet(false);
     }
   };
 
-  const uploadAvatarFile = async (file: File) => {
-    const extension = file.name.split('.').pop() || 'jpg';
-    await uploadAvatarPayload(file, extension, file.type || 'image/jpeg');
-  };
+  const uploadAvatarFromAsset = async (asset: ImagePicker.ImagePickerAsset) => {
+    setIsUploadingAvatar(true);
+    try {
+      const contentType = normalizeImageContentType(asset.mimeType, asset.fileName || asset.uri);
+      const fileInfo = await FileSystem.getInfoAsync(asset.uri);
+      const fileSize = asset.fileSize ?? (fileInfo.exists ? (fileInfo as any).size : undefined);
+      const validationError = validateAvatarFile(contentType, fileSize);
+      if (validationError) {
+        Alert.alert('Không thể cập nhật avatar', validationError);
+        return;
+      }
 
-  const uploadAvatarFromUri = async (uri: string) => {
-    const response = await fetch(uri);
-    const blob = await response.blob();
-    const extension = uri.split('.').pop()?.split('?')[0] || 'jpg';
-    await uploadAvatarPayload(blob, extension, blob.type || 'image/jpeg');
+      const base64 = await FileSystem.readAsStringAsync(asset.uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      const extension = getExtensionForContentType(contentType, asset.fileName || asset.uri);
+      const uploaded = await uploadAvatarPayload(base64ToArrayBuffer(base64), {
+        contentType,
+        extension,
+      });
+
+      if (uploaded) {
+        Alert.alert('Thành công', 'Avatar đã được cập nhật.');
+      }
+    } catch (error: any) {
+      Alert.alert('Không thể cập nhật avatar', error?.message || 'Vui lòng thử lại sau.');
+    } finally {
+      setIsUploadingAvatar(false);
+      setShowAvatarSheet(false);
+    }
   };
 
   const handleUpdateAvatar = async () => {
@@ -253,7 +404,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigateToChangePasswor
       });
 
       if (!result.canceled && result.assets[0]?.uri) {
-        await uploadAvatarFromUri(result.assets[0].uri);
+        await uploadAvatarFromAsset(result.assets[0]);
       }
       return;
     }

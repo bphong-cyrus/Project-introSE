@@ -106,8 +106,15 @@ const CategoryEditScreen: React.FC<CategoryEditScreenProps> = ({
     setError('');
   };
 
+  const savedLimit = categoryBudget?.budgetLimit || 0;
+  const spentAmount = categoryBudget?.spent || 0;
+  const enteredLimit = parseBudgetInput(budgetLimit);
+  const totalBudgetAfterSave = currentTotalBudget - savedLimit + enteredLimit;
+  const remaining = enteredLimit - spentAmount;
+  const hasBudgetLimit = budgetLimit.length > 0;
+
   const handleSave = () => {
-    const amount = parseBudgetInput(budgetLimit);
+    const amount = enteredLimit;
 
     if (amount < 0) {
       setError('Hạn mức ngân sách không được âm');
@@ -120,8 +127,7 @@ const CategoryEditScreen: React.FC<CategoryEditScreenProps> = ({
     }
 
     // Validate: total budget should not exceed monthly income
-    const newTotalBudget = currentTotalBudget - (categoryBudget?.budgetLimit || 0) + amount;
-    if (newTotalBudget > totalIncome) {
+    if (totalBudgetAfterSave > totalIncome) {
       const message = `Tổng hạn mức ngân sách các danh mục không được vượt quá Tổng thu nhập của tháng (${formatCurrency(totalIncome)}). Vui lòng điều chỉnh lại!`;
       setError(message);
       Alert.alert('Không thể lưu hạn mức', message);
@@ -130,10 +136,6 @@ const CategoryEditScreen: React.FC<CategoryEditScreenProps> = ({
 
     onSave?.(amount);
   };
-
-  const remaining = categoryBudget
-    ? categoryBudget.budgetLimit - categoryBudget.spent
-    : 0;
 
   return (
     <KeyboardAvoidingView
@@ -189,7 +191,7 @@ const CategoryEditScreen: React.FC<CategoryEditScreenProps> = ({
             <View style={styles.incomeDivider} />
             <View style={styles.incomeItem}>
               <Text style={styles.incomeLabel}>Tổng hạn mức hiện tại</Text>
-              <Text style={styles.incomeValue}>{formatCurrency(currentTotalBudget - (categoryBudget?.budgetLimit || 0))}</Text>
+              <Text style={styles.incomeValue}>{formatCurrency(currentTotalBudget - savedLimit)}</Text>
             </View>
           </View>
         </View>
@@ -202,7 +204,7 @@ const CategoryEditScreen: React.FC<CategoryEditScreenProps> = ({
           <View style={[styles.inputContainer, error && styles.inputErrorBorder]}>
             <TextInput
               style={styles.input}
-              value={budgetLimit ? parseBudgetInput(budgetLimit).toLocaleString('vi-VN') : ''}
+              value={hasBudgetLimit ? enteredLimit.toLocaleString('vi-VN') : ''}
               onChangeText={handleBudgetChange}
               keyboardType="numeric"
               placeholder="0"
@@ -231,9 +233,9 @@ const CategoryEditScreen: React.FC<CategoryEditScreenProps> = ({
             <Text style={styles.totalPreviewLabel}>Tổng hạn mức sau khi lưu:</Text>
             <Text style={[
               styles.totalPreviewValue,
-              (currentTotalBudget - (categoryBudget?.budgetLimit || 0) + parseBudgetInput(budgetLimit)) > totalIncome && styles.totalPreviewDanger
+              totalBudgetAfterSave > totalIncome && styles.totalPreviewDanger
             ]}>
-              {formatCurrency(currentTotalBudget - (categoryBudget?.budgetLimit || 0) + parseBudgetInput(budgetLimit))}
+              {formatCurrency(totalBudgetAfterSave)}
             </Text>
           </View>
         </View>
@@ -243,13 +245,13 @@ const CategoryEditScreen: React.FC<CategoryEditScreenProps> = ({
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Hạn mức mới</Text>
             <Text style={styles.infoValue}>
-              {budgetLimit ? formatCurrency(parseBudgetInput(budgetLimit)) : '0 VND'}
+              {hasBudgetLimit ? formatCurrency(enteredLimit) : '0 VND'}
             </Text>
           </View>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Đã chi</Text>
             <Text style={[styles.infoValue, styles.expenseText]}>
-              {formatCurrency(categoryBudget?.spent || 0)}
+              {formatCurrency(spentAmount)}
             </Text>
           </View>
           <View style={[styles.infoRow, styles.remainingRow]}>
@@ -278,9 +280,9 @@ const CategoryEditScreen: React.FC<CategoryEditScreenProps> = ({
       {/* Save Button */}
       <View style={styles.footer}>
         <TouchableOpacity
-          style={[styles.saveButton, !budgetLimit && styles.saveButtonDisabled]}
+          style={[styles.saveButton, !hasBudgetLimit && styles.saveButtonDisabled]}
           onPress={handleSave}
-          disabled={!budgetLimit}
+          disabled={!hasBudgetLimit}
         >
           <Ionicons name="checkmark" size={20} color="#FFFFFF" />
           <Text style={styles.saveButtonText}>Lưu hạn mức</Text>

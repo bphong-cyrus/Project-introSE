@@ -81,11 +81,11 @@ const DateTimeInput: React.FC<DateTimeInputProps> = ({ date, onDateChange }) => 
       return false;
     }
 
-    // Update date
+    // Update date while preserving the existing time. Set year/month/day in
+    // one call so changing from a 31-day month to a shorter month cannot roll
+    // over through an invalid intermediate date.
     const newDate = new Date(date);
-    newDate.setDate(day);
-    newDate.setMonth(month - 1);
-    newDate.setFullYear(year);
+    newDate.setFullYear(year, month - 1, day);
     onDateChange(newDate);
     setDateError('');
     return true;
@@ -125,6 +125,7 @@ const DateTimeInput: React.FC<DateTimeInputProps> = ({ date, onDateChange }) => 
     const newDate = new Date(date);
     newDate.setHours(hours);
     newDate.setMinutes(minutes);
+    newDate.setSeconds(0, 0);
     onDateChange(newDate);
     setTimeError('');
     return true;

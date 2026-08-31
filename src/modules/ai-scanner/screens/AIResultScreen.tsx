@@ -12,7 +12,6 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
 import { useTransactions } from '../../../state/TransactionContext';
 import { MAX_TRANSACTION_AMOUNT } from '../../transactions/utils';
@@ -23,6 +22,7 @@ import SuccessBanner from '../components/SuccessBanner';
 import ReceiptPreview from '../components/ReceiptPreview';
 import CategoryDropdown from '../components/CategoryDropdown';
 import TypeSelector from '../../transactions/components/TypeSelector';
+import DateTimeInput from '../../transactions/components/DateTimeInput';
 import type { ExtractedReceiptData } from './AIScannerScreen';
 
 interface AIResultScreenProps {
@@ -47,10 +47,6 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [date, setDate] = useState<Date>(data.date);
   const [dateEdited, setDateEdited] = useState<boolean>(!data.missingFields?.includes('date'));
-  const [timeString, setTimeString] = useState<string>(() => {
-    const d = data.date;
-    return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-  });
   const [note, setNote] = useState<string>(data.note || '');
   const [transactionNameError, setTransactionNameError] = useState<string>('');
   const [storeNameError, setStoreNameError] = useState<string>('');
@@ -105,17 +101,15 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
     }
   }, [storeNameError, transactionNameEdited, transactionNameError]);
 
-  // Handle time change
-  const handleTimeChange = useCallback((text: string) => {
-    const cleaned = text.replace(/[^\d:]/g, '');
-    setTimeString(cleaned);
-  }, []);
+  const handleDateTimeChange = useCallback((nextDate: Date) => {
+    setDate(nextDate);
+    setDateEdited(true);
+    if (dateError) setDateError('');
+  }, [dateError]);
 
   // Handle save
   const handleSave = useCallback(async () => {
-    if (isSavingRef.current) {
-      return;
-    }
+    if (isSavingRef.current) return;
 
     setTransactionNameError('');
     setStoreNameError('');
@@ -156,11 +150,7 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
       return;
     }
 
-    // Build final date with time
-    const [hours, minutes] = (timeString || '00:00').split(':').map(n => parseInt(n, 10) || 0);
     const finalDate = new Date(date);
-    finalDate.setHours(hours);
-    finalDate.setMinutes(minutes);
 
     try {
       isSavingRef.current = true;
@@ -184,12 +174,11 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
         onSaved();
       }, 1500);
     } catch (error: any) {
-      Alert.alert('Không thể lưu giao dịch', error?.message || 'Vui lòng thử lại sau.');
-    } finally {
       isSavingRef.current = false;
       setIsSaving(false);
+      Alert.alert('Không thể lưu giao dịch', error?.message || 'Vui lòng thử lại sau.');
     }
-  }, [amount, transactionName, storeName, selectedCategory, date, dateEdited, timeString, note, transactionType, data.imageUri, addTransaction, onSaved]);
+  }, [amount, transactionName, storeName, selectedCategory, date, dateEdited, note, transactionType, data.imageUri, addTransaction, onSaved]);
 
   // Success overlay
   if (showSuccess) {
@@ -205,8 +194,6 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
     );
   }
 
-  // Date display string
-  const dateString = `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getFullYear()}`;
   const dateConfidenceString = `${date.getDate().toString().padStart(2, '0')}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getFullYear()}`;
 
   // Confidence color helper
@@ -353,63 +340,12 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
           {storeNameError ? <Text style={styles.errorText}>{storeNameError}</Text> : null}
         </View>
 
-        {/* Date & Time Row */}
-        <View style={styles.row}>
-          <View style={[styles.section, styles.halfWidth]}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionLabel}>NGÀY GIAO DỊCH</Text>
-              <View style={[styles.confidenceBadgeSmall, { backgroundColor: getConfidenceColor(data.confidence.date) }]}>
-                <Text style={[styles.confidenceTextSmall, { color: getConfidenceTextColor(data.confidence.date) }]}>
-                  {data.confidence.date}%
-                </Text>
-              </View>
-            </View>
-            <View style={[styles.dateInputContainer, { backgroundColor: getConfidenceColor(data.confidence.date) }]}>
-              <TextInput
-                style={styles.dateInput}
-                value={dateString}
-                onChangeText={(text) => {
-                  const parts = text.split('/');
-                  if (parts.length === 3) {
-                    const day = parseInt(parts[0], 10);
-                    const month = parseInt(parts[1], 10);
-                    const year = parseInt(parts[2], 10);
-                    if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
-                      const newDate = new Date(date);
-                      newDate.setDate(day);
-                      newDate.setMonth(month - 1);
-                      newDate.setFullYear(year);
-                      setDate(newDate);
-                      setDateEdited(true);
-                      setDateError('');
-                    }
-                  }
-                }}
-                placeholder="DD/MM/YYYY"
-                placeholderTextColor={Colors.textMuted}
-                keyboardType="numbers-and-punctuation"
-                maxLength={10}
-              />
-              <Ionicons name="calendar-outline" size={18} color={Colors.textSecondary} />
-            </View>
-            {dateError ? <Text style={styles.errorText}>{dateError}</Text> : null}
-          </View>
-          <View style={[styles.section, styles.halfWidth]}>
-            <Text style={styles.sectionLabel}>THỜI GIAN</Text>
-            <View style={styles.dateInputContainer}>
-              <TextInput
-                style={styles.dateInput}
-                value={timeString}
-                onChangeText={handleTimeChange}
-                placeholder="HH:MM"
-                placeholderTextColor={Colors.textMuted}
-                keyboardType="numbers-and-punctuation"
-                maxLength={5}
-              />
-              <Ionicons name="time-outline" size={18} color={Colors.textSecondary} />
-            </View>
-          </View>
-        </View>
+        {/* Date & Time Picker - same component/configuration as Add Transaction */}
+        <DateTimeInput
+          date={date}
+          onDateChange={handleDateTimeChange}
+        />
+        {dateError ? <Text style={styles.dateTimeErrorText}>{dateError}</Text> : null}
 
         {/* Category Selector */}
         <View style={styles.section}>
@@ -454,14 +390,12 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
         {/* Save Button */}
         <View style={styles.saveButtonWrapper}>
           <TouchableOpacity
-            style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
+            style={[styles.saveButton, isSaving ? styles.saveButtonDisabled : null]}
             onPress={handleSave}
-            disabled={isSaving}
             activeOpacity={0.8}
+            disabled={isSaving}
           >
-            <Text style={styles.saveButtonText}>
-              {isSaving ? 'ĐANG LƯU...' : 'LƯU GIAO DỊCH'}
-            </Text>
+            <Text style={styles.saveButtonText}>{isSaving ? 'ĐANG LƯU...' : 'LƯU GIAO DỊCH'}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -686,6 +620,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.danger,
     marginTop: 6,
+  },
+  dateTimeErrorText: {
+    fontSize: 12,
+    color: Colors.danger,
+    marginTop: -14,
+    marginBottom: 16,
   },
   signHint: {
     fontSize: 12,

@@ -1,7 +1,7 @@
 // UC08 - Advanced Filter Modal
 // Filter by date range, type, category, amount range
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
 import { Category } from '../../../shared/types';
 import { toIoniconName } from '../../../shared/utils/icons';
-import { formatVNDInput, parseVNDInput } from '../utils';
+import { formatDateISO, formatVNDInput, parseVNDInput } from '../utils';
 
 export interface AdvancedFilter {
   dateFrom?: Date;
@@ -34,6 +34,56 @@ interface AdvancedFilterModalProps {
   initialFilter?: AdvancedFilter;
 }
 
+const DATE_FORMAT_HINT = 'YYYY-MM-DD hoặc DD/MM/YYYY';
+
+interface ParsedDateInput {
+  date?: Date;
+  normalized?: string;
+  error?: string;
+}
+
+const buildLocalDate = (year: number, month: number, day: number): ParsedDateInput => {
+  const date = new Date(year, month - 1, day);
+  const isValid = date.getFullYear() === year &&
+    date.getMonth() === month - 1 &&
+    date.getDate() === day;
+
+  if (!isValid) {
+    return { error: 'Ngày không tồn tại.' };
+  }
+
+  date.setHours(0, 0, 0, 0);
+  return {
+    date,
+    normalized: formatDateISO(date),
+  };
+};
+
+const parseFlexibleDateInput = (value: string): ParsedDateInput => {
+  const trimmed = value.trim();
+  if (!trimmed) return {};
+
+  const isoMatch = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(trimmed);
+  if (isoMatch) {
+    return buildLocalDate(
+      parseInt(isoMatch[1], 10),
+      parseInt(isoMatch[2], 10),
+      parseInt(isoMatch[3], 10)
+    );
+  }
+
+  const dayFirstMatch = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(trimmed);
+  if (dayFirstMatch) {
+    return buildLocalDate(
+      parseInt(dayFirstMatch[3], 10),
+      parseInt(dayFirstMatch[2], 10),
+      parseInt(dayFirstMatch[1], 10)
+    );
+  }
+
+  return { error: `Định dạng ngày không hợp lệ. Dùng ${DATE_FORMAT_HINT}.` };
+};
+
 const AdvancedFilterModal: React.FC<AdvancedFilterModalProps> = ({
   visible,
   onClose,
@@ -41,8 +91,8 @@ const AdvancedFilterModal: React.FC<AdvancedFilterModalProps> = ({
   categories,
   initialFilter,
 }) => {
-  const [dateFrom, setDateFrom] = useState(initialFilter?.dateFrom?.toISOString().split('T')[0] || '');
-  const [dateTo, setDateTo] = useState(initialFilter?.dateTo?.toISOString().split('T')[0] || '');
+  const [dateFrom, setDateFrom] = useState(initialFilter?.dateFrom ? formatDateISO(initialFilter.dateFrom) : '');
+  const [dateTo, setDateTo] = useState(initialFilter?.dateTo ? formatDateISO(initialFilter.dateTo) : '');
   const [selectedType, setSelectedType] = useState<'all' | 'income' | 'expense'>(
     initialFilter?.type || 'all'
   );
@@ -52,26 +102,63 @@ const AdvancedFilterModal: React.FC<AdvancedFilterModalProps> = ({
   const [minAmount, setMinAmount] = useState(initialFilter?.minAmount?.toString() || '');
   const [maxAmount, setMaxAmount] = useState(initialFilter?.maxAmount?.toString() || '');
 
+  const parsedDateFrom = useMemo(() => parseFlexibleDateInput(dateFrom), [dateFrom]);
+  const parsedDateTo = useMemo(() => parseFlexibleDateInput(dateTo), [dateTo]);
+  const minAmountValue = useMemo(() => (
+    minAmount ? parseVNDInput(minAmount) : undefined
+  ), [minAmount]);
+  const maxAmountValue = useMemo(() => (
+    maxAmount ? parseVNDInput(maxAmount) : undefined
+  ), [maxAmount]);
+  const dateRangeError = parsedDateFrom.date && parsedDateTo.date && parsedDateTo.date < parsedDateFrom.date
+    ? 'Đến ngày phải lớn hơn hoặc bằng Từ ngày.'
+    : '';
+  const amountRangeError = minAmountValue !== undefined &&
+    maxAmountValue !== undefined &&
+    maxAmountValue < minAmountValue
+    ? 'Số tiền tối đa phải lớn hơn hoặc bằng số tiền tối thiểu.'
+    : '';
+  const hasValidationError = !!(
+    parsedDateFrom.error ||
+    parsedDateTo.error ||
+    dateRangeError ||
+    amountRangeError
+  );
+
   const toggleCategory = (catId: string) => {
     setSelectedCategories((prev) =>
       prev.includes(catId) ? prev.filter((id) => id !== catId) : [...prev, catId]
     );
   };
 
+  const normalizeDateFrom = () => {
+    if (parsedDateFrom.normalized) {
+      setDateFrom(parsedDateFrom.normalized);
+    }
+  };
+
+  const normalizeDateTo = () => {
+    if (parsedDateTo.normalized) {
+      setDateTo(parsedDateTo.normalized);
+    }
+  };
+
   const handleApply = () => {
+    if (hasValidationError) return;
+
     const filter: AdvancedFilter = {
       type: selectedType,
       categoryIds: selectedCategories,
-      minAmount: minAmount ? parseVNDInput(minAmount) : undefined,
-      maxAmount: maxAmount ? parseVNDInput(maxAmount) : undefined,
+      minAmount: minAmountValue,
+      maxAmount: maxAmountValue,
     };
 
-    if (dateFrom) {
-      filter.dateFrom = new Date(dateFrom);
+    if (parsedDateFrom.date) {
+      filter.dateFrom = new Date(parsedDateFrom.date);
       filter.dateFrom.setHours(0, 0, 0, 0);
     }
-    if (dateTo) {
-      filter.dateTo = new Date(dateTo);
+    if (parsedDateTo.date) {
+      filter.dateTo = new Date(parsedDateTo.date);
       filter.dateTo.setHours(23, 59, 59, 999);
     }
 
@@ -114,24 +201,41 @@ const AdvancedFilterModal: React.FC<AdvancedFilterModalProps> = ({
                 <View style={styles.dateInputBox}>
                   <Text style={styles.dateHint}>Từ ngày</Text>
                   <TextInput
-                    style={styles.dateInput}
+                    style={[
+                      styles.dateInput,
+                      parsedDateFrom.error && styles.inputError,
+                    ]}
                     value={dateFrom}
                     onChangeText={setDateFrom}
-                    placeholder="YYYY-MM-DD"
+                    onBlur={normalizeDateFrom}
+                    placeholder={DATE_FORMAT_HINT}
                     placeholderTextColor={Colors.textMuted}
+                    keyboardType="numbers-and-punctuation"
                   />
                 </View>
                 <View style={styles.dateInputBox}>
                   <Text style={styles.dateHint}>Đến ngày</Text>
                   <TextInput
-                    style={styles.dateInput}
+                    style={[
+                      styles.dateInput,
+                      (parsedDateTo.error || dateRangeError) && styles.inputError,
+                    ]}
                     value={dateTo}
                     onChangeText={setDateTo}
-                    placeholder="YYYY-MM-DD"
+                    onBlur={normalizeDateTo}
+                    placeholder={DATE_FORMAT_HINT}
                     placeholderTextColor={Colors.textMuted}
+                    keyboardType="numbers-and-punctuation"
                   />
                 </View>
               </View>
+              {parsedDateFrom.error ? (
+                <Text style={styles.errorText}>Từ ngày: {parsedDateFrom.error}</Text>
+              ) : null}
+              {parsedDateTo.error ? (
+                <Text style={styles.errorText}>Đến ngày: {parsedDateTo.error}</Text>
+              ) : null}
+              {dateRangeError ? <Text style={styles.errorText}>{dateRangeError}</Text> : null}
             </View>
 
             {/* Type */}
@@ -192,7 +296,10 @@ const AdvancedFilterModal: React.FC<AdvancedFilterModalProps> = ({
                 <View style={styles.amountInputBox}>
                   <Text style={styles.dateHint}>Tối thiểu</Text>
                   <TextInput
-                    style={styles.amountInput}
+                    style={[
+                      styles.amountInput,
+                      amountRangeError && styles.inputError,
+                    ]}
                     value={formatVNDInput(minAmount)}
                     onChangeText={(text) => setMinAmount(text.replace(/[^0-9]/g, ''))}
                     placeholder="0"
@@ -203,7 +310,10 @@ const AdvancedFilterModal: React.FC<AdvancedFilterModalProps> = ({
                 <View style={styles.amountInputBox}>
                   <Text style={styles.dateHint}>Tối đa</Text>
                   <TextInput
-                    style={styles.amountInput}
+                    style={[
+                      styles.amountInput,
+                      amountRangeError && styles.inputError,
+                    ]}
                     value={formatVNDInput(maxAmount)}
                     onChangeText={(text) => setMaxAmount(text.replace(/[^0-9]/g, ''))}
                     placeholder="0"
@@ -212,6 +322,7 @@ const AdvancedFilterModal: React.FC<AdvancedFilterModalProps> = ({
                   />
                 </View>
               </View>
+              {amountRangeError ? <Text style={styles.errorText}>{amountRangeError}</Text> : null}
             </View>
           </ScrollView>
 
@@ -223,8 +334,12 @@ const AdvancedFilterModal: React.FC<AdvancedFilterModalProps> = ({
               <Text style={styles.resetButtonText}>Đặt lại</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.applyButton}
+              style={[
+                styles.applyButton,
+                hasValidationError && styles.applyButtonDisabled,
+              ]}
               onPress={handleApply}
+              disabled={hasValidationError}
             >
               <Text style={styles.applyButtonText}>Áp dụng</Text>
             </TouchableOpacity>
@@ -305,6 +420,14 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 14,
     color: Colors.textPrimary,
+  },
+  inputError: {
+    borderColor: Colors.danger,
+  },
+  errorText: {
+    marginTop: 6,
+    fontSize: 12,
+    color: Colors.danger,
   },
   typeRow: {
     flexDirection: 'row',
@@ -410,6 +533,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  applyButtonDisabled: {
+    backgroundColor: Colors.textMuted,
   },
   applyButtonText: {
     fontSize: 14,

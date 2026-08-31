@@ -196,6 +196,17 @@ const AppContent: React.FC = () => {
     setHistoryScreen('detail');
   };
 
+  const handleExternalTransactionPress = (transaction: Transaction) => {
+    setShowNotificationCenter(false);
+    setShowSettings(false);
+    setShowReportDetail(false);
+    setShowChangePassword(false);
+    setSelectedHistoryDate(null);
+    setActiveTab('Transactions');
+    setAddFlowScreen('main');
+    handleTransactionPress(transaction);
+  };
+
   const handleHistoryBack = () => {
     setHistoryScreen('list');
     setSelectedTransactionId(null);
@@ -387,12 +398,13 @@ const AppContent: React.FC = () => {
             onDateSelect={handleHomeDateSelect}
             onNotificationsPress={() => setShowNotificationCenter(true)}
             onSettingsPress={() => setShowSettings(true)}
+            onTransactionPress={handleExternalTransactionPress}
           />
         );
       case 'Transactions':
         return renderTransactionsContent();
       case 'Budget':
-        return <BudgetScreen />;
+        return <BudgetScreen onTransactionPress={handleExternalTransactionPress} />;
       case 'Profile':
         if (showChangePassword) {
           return (
@@ -415,6 +427,7 @@ const AppContent: React.FC = () => {
             onDateSelect={handleHomeDateSelect}
             onNotificationsPress={() => setShowNotificationCenter(true)}
             onSettingsPress={() => setShowSettings(true)}
+            onTransactionPress={handleExternalTransactionPress}
           />
         );
     }

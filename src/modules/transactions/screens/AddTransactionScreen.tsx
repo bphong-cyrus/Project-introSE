@@ -51,11 +51,11 @@ const AddTransactionScreen: React.FC<AddTransactionScreenProps> = ({
   const [note, setNote] = useState<string>('');
   const [transactionNameError, setTransactionNameError] = useState<string>('');
   const [amountError, setAmountError] = useState<string>('');
-  const [isSaving, setIsSaving] = useState(false);
-  const isSavingRef = useRef(false);
 
   // Success state - shows inline success message instead of Alert
   const [showSuccess, setShowSuccess] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const isSavingRef = useRef(false);
 
   // Available categories based on type
   const availableCategories = getCategoriesByType(transactionType);
@@ -77,9 +77,7 @@ const AddTransactionScreen: React.FC<AddTransactionScreenProps> = ({
 
   // Handle save - main save logic
   const handleSave = useCallback(async () => {
-    if (isSavingRef.current) {
-      return;
-    }
+    if (isSavingRef.current) return;
 
     // Reset error
     setTransactionNameError('');
@@ -115,7 +113,6 @@ const AddTransactionScreen: React.FC<AddTransactionScreenProps> = ({
       isSavingRef.current = true;
       setIsSaving(true);
 
-      // Create transaction
       await addTransaction({
         userId: 'user-1',
         name: trimmedTransactionName,
@@ -139,10 +136,9 @@ const AddTransactionScreen: React.FC<AddTransactionScreenProps> = ({
         }
       }, 1500);
     } catch (error: any) {
-      Alert.alert('Không thể lưu giao dịch', error?.message || 'Vui lòng thử lại sau.');
-    } finally {
       isSavingRef.current = false;
       setIsSaving(false);
+      Alert.alert('Không thể lưu giao dịch', error?.message || 'Vui lòng thử lại sau.');
     }
   }, [amount, selectedCategory, transactionName, transactionType, dateTime, note, addTransaction, onSaved, onClose]);
 
