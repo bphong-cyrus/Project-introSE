@@ -189,13 +189,19 @@ const calendarStyles = StyleSheet.create({
 // ========== TRANSACTION ITEM COMPONENT ==========
 interface TransactionItemProps {
   transaction: Transaction;
+  onPress?: (transaction: Transaction) => void;
 }
 
-const TransactionItem: React.FC<TransactionItemProps> = ({ transaction }) => {
+const TransactionItem: React.FC<TransactionItemProps> = ({ transaction, onPress }) => {
   const isExpense = transaction.type === 'expense';
 
   return (
-    <View style={transactionStyles.container}>
+    <TouchableOpacity
+      style={transactionStyles.container}
+      onPress={() => onPress?.(transaction)}
+      activeOpacity={0.75}
+      disabled={!onPress}
+    >
       {/* Left: Category Icon */}
       <View
         style={[
@@ -229,7 +235,7 @@ const TransactionItem: React.FC<TransactionItemProps> = ({ transaction }) => {
       >
         {isExpense ? '-' : '+'}{formatCurrency(transaction.amount)}
       </Text>
-    </View>
+    </TouchableOpacity>
   );
 };
 
@@ -290,9 +296,16 @@ interface HomeScreenProps {
   onDateSelect?: (date: Date) => void;
   onNotificationsPress?: () => void;
   onSettingsPress?: () => void;
+  onTransactionPress?: (transaction: Transaction) => void;
 }
 
-const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange, onDateSelect, onNotificationsPress, onSettingsPress }) => {
+const HomeScreen: React.FC<HomeScreenProps> = ({
+  onTabChange,
+  onDateSelect,
+  onNotificationsPress,
+  onSettingsPress,
+  onTransactionPress,
+}) => {
   const [activeTab, setActiveTab] = useState<TabName>('Home');
   const now = new Date();
   const currentMonth = now.getMonth();
@@ -511,6 +524,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange, onDateSelect, onNo
               <TransactionItem
                 key={transaction.id}
                 transaction={transaction}
+                onPress={onTransactionPress}
               />
             ))}
           </View>

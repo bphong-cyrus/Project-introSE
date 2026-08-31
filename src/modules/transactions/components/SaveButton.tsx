@@ -15,13 +15,17 @@ interface SaveButtonProps {
   label?: string;
 }
 
-const SaveButton: React.FC<SaveButtonProps> = ({ onPress, disabled = false, label = 'LƯU LẠI' }) => {
+const SaveButton: React.FC<SaveButtonProps> = ({
+  onPress,
+  disabled = false,
+  label = 'LƯU LẠI',
+}) => {
   return (
     <TouchableOpacity
-      style={[styles.saveButton, disabled && styles.saveButtonDisabled]}
+      style={[styles.saveButton, disabled ? styles.saveButtonDisabled : null]}
       onPress={onPress}
-      disabled={disabled}
       activeOpacity={0.8}
+      disabled={disabled}
     >
       <Text style={styles.saveButtonText}>{label}</Text>
     </TouchableOpacity>

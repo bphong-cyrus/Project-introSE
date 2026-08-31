@@ -20,6 +20,8 @@ import { Transaction } from '../../../shared/types';
 import { toIoniconName } from '../../../shared/utils/icons';
 import { useTransactions } from '../../../state/TransactionContext';
 
+type HistoryFilterType = 'all' | 'week';
+
 interface TransactionHistoryScreenProps {
   categoryId?: string;
   categoryName?: string;
@@ -29,7 +31,28 @@ interface TransactionHistoryScreenProps {
   selectedMonth?: number;
   selectedYear?: number;
   onClose?: () => void;
+  onTransactionPress?: (transaction: Transaction) => void;
 }
+
+const getMonthBounds = (month: number, year: number) => ({
+  start: new Date(year, month, 1, 0, 0, 0, 0),
+  end: new Date(year, month + 1, 0, 23, 59, 59, 999),
+});
+
+const getSevenDayRangeForSelectedMonth = (month: number, year: number) => {
+  const now = new Date();
+  const { start: monthStart, end: monthEnd } = getMonthBounds(month, year);
+  const isCurrentMonth = now.getMonth() === month && now.getFullYear() === year;
+  const rangeEnd = isCurrentMonth ? now : monthEnd;
+  const rangeStart = new Date(rangeEnd);
+  rangeStart.setHours(0, 0, 0, 0);
+  rangeStart.setDate(rangeStart.getDate() - 6);
+
+  return {
+    start: rangeStart < monthStart ? monthStart : rangeStart,
+    end: rangeEnd > monthEnd ? monthEnd : rangeEnd,
+  };
+};
 
 const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> = ({
   categoryId,
@@ -40,8 +63,9 @@ const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> = ({
   selectedMonth,
   selectedYear,
   onClose,
+  onTransactionPress,
 }) => {
-  const [filterType, setFilterType] = useState<'all' | 'week' | 'month'>('all');
+  const [filterType, setFilterType] = useState<HistoryFilterType>('all');
   const { transactions } = useTransactions();
 
   // Determine if this is an income category
@@ -64,20 +88,15 @@ const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> = ({
       return matchesCategory && matchesType && matchesMonth;
     });
 
-    // Apply additional date filter (7 days or 30 days from current month)
+    // Apply 7-day filter while still keeping the result inside the selected month.
     if (filterType === 'week') {
-      const now = new Date(selectedYear || new Date().getFullYear(), selectedMonth || new Date().getMonth(), 1);
-      const weekEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const now = new Date();
+      const targetMonth = selectedMonth ?? now.getMonth();
+      const targetYear = selectedYear ?? now.getFullYear();
+      const { start, end } = getSevenDayRangeForSelectedMonth(targetMonth, targetYear);
       filtered = filtered.filter((txn) => {
         const txnDate = new Date(txn.date);
-        return txnDate >= now && txnDate <= weekEnd;
-      });
-    } else if (filterType === 'month') {
-      const monthStart = new Date(selectedYear || new Date().getFullYear(), selectedMonth || new Date().getMonth(), 1);
-      const monthEnd = new Date(monthStart.getTime() + 30 * 24 * 60 * 60 * 1000);
-      filtered = filtered.filter((txn) => {
-        const txnDate = new Date(txn.date);
-        return txnDate >= monthStart && txnDate <= monthEnd;
+        return txnDate >= start && txnDate <= end;
       });
     }
 
@@ -125,7 +144,12 @@ const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> = ({
   };
 
   const renderTransaction = ({ item }: { item: Transaction }) => (
-    <View style={styles.transactionItem}>
+    <TouchableOpacity
+      style={styles.transactionItem}
+      onPress={() => onTransactionPress?.(item)}
+      activeOpacity={0.75}
+      disabled={!onTransactionPress}
+    >
       <View
         style={[
           styles.transactionIcon,
@@ -152,7 +176,7 @@ const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> = ({
           {amountPrefix}{formatCurrency(item.amount)}
         </Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   const renderEmptyState = () => (
@@ -246,22 +270,6 @@ const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> = ({
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[
-            styles.filterTab,
-            filterType === 'month' && styles.filterTabActive,
-          ]}
-          onPress={() => setFilterType('month')}
-        >
-          <Text
-            style={[
-              styles.filterText,
-              filterType === 'month' && styles.filterTextActive,
-            ]}
-          >
-            30 ngày
-          </Text>
-        </TouchableOpacity>
       </View>
 
       {/* Transaction List */}

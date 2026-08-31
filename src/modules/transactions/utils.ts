@@ -33,15 +33,39 @@ export const formatVND = (amount: number): string => {
 // Format date as YYYY-MM-DD
 export const formatDateISO = (date: Date): string => {
   const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return '';
   const year = d.getFullYear();
   const month = (d.getMonth() + 1).toString().padStart(2, '0');
   const day = d.getDate().toString().padStart(2, '0');
   return `${year}-${month}-${day}`;
 };
 
+// Parse YYYY-MM-DD as a local date. new Date('YYYY-MM-DD') is UTC-based and
+// can shift the day/time when rendered in local time zones.
+export const parseLocalISODate = (value: string): Date | null => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+
+  const year = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  const day = parseInt(match[3], 10);
+  const date = new Date(year, month - 1, day);
+
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return date;
+};
+
 // Format time as HH:mm
 export const formatTime = (date: Date): string => {
   const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return '--:--';
   const hours = d.getHours().toString().padStart(2, '0');
   const minutes = d.getMinutes().toString().padStart(2, '0');
   return `${hours}:${minutes}`;
@@ -50,6 +74,7 @@ export const formatTime = (date: Date): string => {
 // Format date as DD/MM/YYYY
 export const formatDateDMY = (date: Date): string => {
   const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return '';
   const day = d.getDate().toString().padStart(2, '0');
   const month = (d.getMonth() + 1).toString().padStart(2, '0');
   const year = d.getFullYear();
@@ -64,6 +89,7 @@ export const formatDateTime = (date: Date): string => {
 // Format time as 12-hour format (12:15 PM)
 export const formatTime12h = (date: Date): string => {
   const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return '--:--';
   let hours = d.getHours();
   const minutes = d.getMinutes().toString().padStart(2, '0');
   const ampm = hours >= 12 ? 'PM' : 'AM';

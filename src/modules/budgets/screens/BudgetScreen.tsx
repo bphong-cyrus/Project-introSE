@@ -20,7 +20,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
-import { Category, CategoryBudget } from '../../../shared/types';
+import { Category, CategoryBudget, Transaction } from '../../../shared/types';
 import { useTransactions } from '../../../state/TransactionContext';
 import { useCategories } from '../../../state/CategoryContext';
 import RadialGauge from '../components/RadialGauge';
@@ -56,7 +56,11 @@ const buildBudgetLimitError = (income: number) => (
   `Tổng hạn mức ngân sách các danh mục không được vượt quá Tổng thu nhập của tháng (${formatCurrency(income)}). Vui lòng điều chỉnh lại!`
 );
 
-const BudgetScreen: React.FC = () => {
+interface BudgetScreenProps {
+  onTransactionPress?: (transaction: Transaction) => void;
+}
+
+const BudgetScreen: React.FC<BudgetScreenProps> = ({ onTransactionPress }) => {
   // Use global contexts for shared state
   const { user } = useAuth();
   const { transactions, refreshTransactions } = useTransactions();
@@ -380,6 +384,16 @@ const BudgetScreen: React.FC = () => {
     setHistoryCategory(category);
     setShowTransactionHistory(true);
   };
+
+  const closeTransactionHistory = useCallback(() => {
+    setShowTransactionHistory(false);
+    setHistoryCategory(null);
+  }, []);
+
+  const handleHistoryTransactionPress = useCallback((transaction: Transaction) => {
+    closeTransactionHistory();
+    onTransactionPress?.(transaction);
+  }, [closeTransactionHistory, onTransactionPress]);
 
   const openFixedIncomeEditor = () => {
     setFixedIncomeInput(String(Math.round(fixedMonthlyIncome || 0)));
@@ -798,7 +812,7 @@ const BudgetScreen: React.FC = () => {
       <Modal
         visible={showTransactionHistory}
         animationType="slide"
-        onRequestClose={() => setShowTransactionHistory(false)}
+        onRequestClose={closeTransactionHistory}
       >
         <TransactionHistoryScreen
           categoryId={historyCategory?.id}
@@ -808,7 +822,8 @@ const BudgetScreen: React.FC = () => {
           categoryType={historyCategory?.type}
           selectedMonth={selectedMonth}
           selectedYear={selectedYear}
-          onClose={() => setShowTransactionHistory(false)}
+          onClose={closeTransactionHistory}
+          onTransactionPress={onTransactionPress ? handleHistoryTransactionPress : undefined}
         />
       </Modal>
     </View>

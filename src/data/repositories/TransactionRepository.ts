@@ -9,6 +9,36 @@ import { receiptRepository } from './ReceiptRepository';
 
 type TransactionRow = Database['public']['Tables']['transactions']['Row'];
 
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+const toNumber = (value: number | string | null | undefined): number => {
+  const numericValue = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numericValue) ? numericValue : 0;
+};
+
+const parseTransactionDate = (value: string): Date => {
+  if (DATE_ONLY_PATTERN.test(value)) {
+    const [year, month, day] = value.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  }
+
+  const parsedDate = new Date(value);
+  return Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
+};
+
+const formatTransactionDateForDatabase = (value: Date | string): string => {
+  const date = typeof value === 'string' && DATE_ONLY_PATTERN.test(value)
+    ? parseTransactionDate(value)
+    : value instanceof Date
+      ? value
+      : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return formatTransactionDateForDatabase(new Date());
+  }
+
+  return date.toISOString();
+};
+
 export class TransactionRepository {
   /**
    * Map database row to Transaction type
@@ -18,11 +48,11 @@ export class TransactionRepository {
       id: row.transaction_id,
       userId: row.user_id,
       name: row.name || row.description || 'Giao dịch',
-      amount: row.amount,
+      amount: toNumber(row.amount),
       type: row.type,
       categoryId: row.category_id,
       note: row.note || undefined,
-      date: new Date(row.transaction_date),
+      date: parseTransactionDate(row.transaction_date),
       imageUrl: row.receipt_id || undefined,
       source: row.source || undefined,
       createdAt: new Date(row.created_at),
@@ -187,9 +217,7 @@ export class TransactionRepository {
           type: transaction.type,
           note: transaction.note || null,
           currency_code: 'VND',
-          transaction_date: transaction.date instanceof Date
-            ? transaction.date.toISOString().split('T')[0]
-            : transaction.date,
+          transaction_date: formatTransactionDateForDatabase(transaction.date),
           payment_method: null,
           source: transaction.source || (transaction.imageUrl ? 'ocr' : 'manual'),
         })
@@ -226,9 +254,7 @@ export class TransactionRepository {
       if (updates.categoryId !== undefined) updateData.category_id = updates.categoryId;
       if (updates.note !== undefined) updateData.note = updates.note;
       if (updates.date !== undefined) {
-        updateData.transaction_date = updates.date instanceof Date
-          ? updates.date.toISOString().split('T')[0]
-          : updates.date;
+        updateData.transaction_date = formatTransactionDateForDatabase(updates.date);
       }
 
       const { data, error } = await supabase

@@ -23,7 +23,14 @@
       "favicon": "./img/smartspend-logo.png"
     },
     "plugins": [
-      "expo-font"
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "SmartSpend AI cần quyền truy cập thư viện ảnh để bạn cập nhật avatar và chọn ảnh hóa đơn.",
+          "cameraPermission": "SmartSpend AI cần quyền camera để quét hóa đơn."
+        }
+      ]
     ]
   }
 }
