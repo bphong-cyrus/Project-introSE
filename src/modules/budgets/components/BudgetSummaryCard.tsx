@@ -19,14 +19,7 @@ const BudgetSummaryCard: React.FC<BudgetSummaryCardProps> = ({
     ? Math.round((totalSpent / totalLimit) * 100)
     : 0;
 
-  // Color based on percentage
-  const getProgressColor = (pct: number): string => {
-    if (pct > 80) return Colors.danger;
-    if (pct > 50) return Colors.warning;
-    return Colors.primary;
-  };
-
-  const progressColor = getProgressColor(percentage);
+  const progressColor = '#E74C3C';
 
   const formatCurrency = (amount: number): string => {
     return `${new Intl.NumberFormat('vi-VN').format(amount)} VND`;
@@ -36,11 +29,12 @@ const BudgetSummaryCard: React.FC<BudgetSummaryCardProps> = ({
     <View style={styles.container}>
       {/* Label & Amount Row */}
       <View style={styles.headerRow}>
-        <Text style={styles.label}>Đã dùng</Text>
+        <Text style={styles.label}>Tổng chi tiêu</Text>
         <Text style={[styles.amount, { color: progressColor }]}>
           {formatCurrency(totalSpent)}
         </Text>
       </View>
+      <Text style={styles.noteText}>Tỉ lệ so với tổng ngân sách của tháng</Text>
 
       {/* Progress Bar */}
       <View style={styles.progressContainer}>
@@ -78,7 +72,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 4,
   },
   label: {
     fontSize: 14,
@@ -88,6 +82,11 @@ const styles = StyleSheet.create({
   amount: {
     fontSize: 18,
     fontWeight: '700',
+  },
+  noteText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginBottom: 12,
   },
   progressContainer: {
     flexDirection: 'row',

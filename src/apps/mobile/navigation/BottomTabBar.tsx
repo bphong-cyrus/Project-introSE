@@ -1,10 +1,11 @@
 // SmartSpend AI - Bottom Tab Bar
 // Bootstrap Icons: uses Ionicons which has Bootstrap-style icons
 // Primary color: #167B63
-// Design: 5 tabs - home, list, + (floating), wallet, profile
+// Design: 5 tabs - home, transactions, add, budget, profile
 
 import React from 'react';
 import {
+  Text,
   View,
   StyleSheet,
   TouchableOpacity,
@@ -12,9 +13,24 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
 
-type TabName = 'Home' | 'Transactions' | 'Add' | 'Budget' | 'Profile';
+export type TabName = 'Home' | 'Transactions' | 'Add' | 'Budget' | 'Profile';
+type RegularTabName = Exclude<TabName, 'Add'>;
 
 export const BOTTOM_TAB_BAR_HEIGHT = 112;
+
+const LEFT_TABS: RegularTabName[] = ['Home', 'Transactions'];
+const RIGHT_TABS: RegularTabName[] = ['Budget', 'Profile'];
+
+const TAB_CONFIG: Record<RegularTabName, {
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  activeIcon: keyof typeof Ionicons.glyphMap;
+}> = {
+  Home: { label: 'Home', icon: 'home-outline', activeIcon: 'home' },
+  Transactions: { label: 'Giao dịch', icon: 'list-outline', activeIcon: 'list' },
+  Budget: { label: 'Ngân sách', icon: 'wallet-outline', activeIcon: 'wallet' },
+  Profile: { label: 'Hồ sơ', icon: 'person-circle-outline', activeIcon: 'person-circle' },
+};
 
 interface BottomTabBarProps {
   activeTab?: TabName;
@@ -29,24 +45,26 @@ const BottomTabBar: React.FC<BottomTabBarProps> = ({
 }) => {
   const isActive = (name: TabName) => activeTab === name;
 
-  const getTabIcon = (tab: TabName, focused: boolean) => {
+  const renderTab = (tab: RegularTabName) => {
+    const focused = isActive(tab);
+    const config = TAB_CONFIG[tab];
     const color = focused ? Colors.primary : Colors.textMuted;
-    const size = 24;
 
-    switch (tab) {
-      case 'Home':
-        return <Ionicons name="home" size={size} color={color} />;
-      case 'Transactions':
-        return <Ionicons name="list" size={size} color={color} />;
-      case 'Add':
-        return <Ionicons name="add-circle" size={size + 2} color="#FFFFFF" />;
-      case 'Budget':
-        return <Ionicons name="wallet" size={size} color={color} />;
-      case 'Profile':
-        return <Ionicons name="person-circle" size={size} color={color} />;
-      default:
-        return <Ionicons name="home" size={size} color={color} />;
-    }
+    return (
+      <TouchableOpacity
+        key={tab}
+        style={styles.tabItem}
+        onPress={() => onTabPress?.(tab)}
+        activeOpacity={0.78}
+      >
+        <View style={[styles.iconWrapper, focused && styles.iconWrapperActive]}>
+          <Ionicons name={focused ? config.activeIcon : config.icon} size={21} color={color} />
+        </View>
+        <Text style={[styles.tabLabel, focused && styles.tabLabelActive]} numberOfLines={1}>
+          {config.label}
+        </Text>
+      </TouchableOpacity>
+    );
   };
 
   return (
@@ -55,61 +73,26 @@ const BottomTabBar: React.FC<BottomTabBarProps> = ({
       <View style={styles.tabBackground}>
         {/* Left 2 tabs */}
         <View style={styles.leftTabs}>
-          {/* Home Tab */}
-          <TouchableOpacity
-            style={styles.tabItem}
-            onPress={() => onTabPress?.('Home')}
-          >
-            <View style={[styles.iconWrapper, isActive('Home') && styles.iconWrapperActive]}>
-              {getTabIcon('Home', isActive('Home'))}
-            </View>
-          </TouchableOpacity>
-
-          {/* Transactions Tab */}
-          <TouchableOpacity
-            style={styles.tabItem}
-            onPress={() => onTabPress?.('Transactions')}
-          >
-            <View style={[styles.iconWrapper, isActive('Transactions') && styles.iconWrapperActive]}>
-              {getTabIcon('Transactions', isActive('Transactions'))}
-            </View>
-          </TouchableOpacity>
+          {LEFT_TABS.map(renderTab)}
         </View>
 
         {/* Center - Floating Add Button */}
         <View style={styles.centerContainer}>
           <TouchableOpacity
-            style={styles.addButtonWrapper}
-            onPress={onAddPress}
+            style={[styles.addButtonWrapper, isActive('Add') && styles.addButtonWrapperActive]}
+            onPress={onAddPress || (() => onTabPress?.('Add'))}
             activeOpacity={0.85}
           >
             <View style={styles.addButtonFloating}>
               <Ionicons name="add" size={28} color="#FFFFFF" />
             </View>
           </TouchableOpacity>
+          <Text style={[styles.tabLabel, isActive('Add') && styles.tabLabelActive]}>Thêm</Text>
         </View>
 
         {/* Right 2 tabs */}
         <View style={styles.rightTabs}>
-          {/* Budget Tab */}
-          <TouchableOpacity
-            style={styles.tabItem}
-            onPress={() => onTabPress?.('Budget')}
-          >
-            <View style={[styles.iconWrapper, isActive('Budget') && styles.iconWrapperActive]}>
-              {getTabIcon('Budget', isActive('Budget'))}
-            </View>
-          </TouchableOpacity>
-
-          {/* Profile Tab */}
-          <TouchableOpacity
-            style={styles.tabItem}
-            onPress={() => onTabPress?.('Profile')}
-          >
-            <View style={[styles.iconWrapper, isActive('Profile') && styles.iconWrapperActive]}>
-              {getTabIcon('Profile', isActive('Profile'))}
-            </View>
-          </TouchableOpacity>
+          {RIGHT_TABS.map(renderTab)}
         </View>
       </View>
     </View>
@@ -132,7 +115,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingHorizontal: 8,
-    paddingTop: 16,
+    paddingTop: 14,
     paddingBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
@@ -154,26 +137,41 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
+    paddingVertical: 6,
   },
   iconWrapper: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     justifyContent: 'center',
     alignItems: 'center',
   },
   iconWrapperActive: {
     backgroundColor: 'rgba(22, 123, 99, 0.1)',
   },
+  tabLabel: {
+    marginTop: 2,
+    color: Colors.textMuted,
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  tabLabelActive: {
+    color: Colors.primary,
+    fontWeight: '700',
+  },
   centerContainer: {
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
     width: 70,
   },
   addButtonWrapper: {
     alignItems: 'center',
-    marginBottom: 8,
+  },
+  addButtonWrapperActive: {
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 7,
   },
   addButtonFloating: {
     width: 56,

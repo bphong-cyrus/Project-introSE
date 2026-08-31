@@ -31,14 +31,15 @@ import {
 import { HomeScreen, ProfileScreen, BudgetScreen, NotificationCenterScreen, SettingsScreen } from './screens';
 import { BottomTabBar } from './components';
 import { BOTTOM_TAB_BAR_HEIGHT } from './navigation/BottomTabBar';
+import type { TabName } from './navigation/BottomTabBar';
 import { AddTransactionScreen } from '../../modules/transactions';
 import { AIScannerScreen, AIResultScreen } from '../../modules/ai-scanner';
 import type { ExtractedReceiptData } from '../../modules/ai-scanner/screens/AIScannerScreen';
 import { TransactionHistoryScreen, TransactionDetailScreen, EditTransactionScreen } from '../../modules/transactions';
+import { FinancialReportsScreen } from '../../modules/reports';
 import { Transaction } from '../../shared/types';
 
 // Type definitions
-type TabName = 'Home' | 'Transactions' | 'Add' | 'Budget' | 'Profile';
 type AddFlowScreen = 'main' | 'ai-scanner' | 'ai-result';
 type HistoryScreen = 'list' | 'detail' | 'edit';
 type AuthScreen = 'login' | 'register' | 'forgotPassword' | 'otp' | 'resetPassword' | 'profileSetup' | 'changePassword';
@@ -66,6 +67,7 @@ const AppContent: React.FC = () => {
   const [selectedHistoryDate, setSelectedHistoryDate] = useState<Date | null>(null);
   const [showNotificationCenter, setShowNotificationCenter] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showReportDetail, setShowReportDetail] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
 
   useEffect(() => {
@@ -79,6 +81,7 @@ const AppContent: React.FC = () => {
       setSelectedHistoryDate(null);
       setShowNotificationCenter(false);
       setShowSettings(false);
+      setShowReportDetail(false);
     }
   }, [authState]);
 
@@ -138,6 +141,7 @@ const AppContent: React.FC = () => {
   const handleTabPress = (tab: TabName) => {
     setShowNotificationCenter(false);
     setShowSettings(false);
+    setShowReportDetail(false);
     setActiveTab(tab);
     setAddFlowScreen('main');
     if (tab !== 'Transactions') {
@@ -162,6 +166,7 @@ const AppContent: React.FC = () => {
   const handleAddPress = () => {
     setShowNotificationCenter(false);
     setShowSettings(false);
+    setShowReportDetail(false);
     setActiveTab('Add');
     setAddFlowScreen('main');
   };
@@ -306,6 +311,10 @@ const AppContent: React.FC = () => {
       return <SettingsScreen onBack={() => setShowSettings(false)} />;
     }
 
+    if (showReportDetail) {
+      return <FinancialReportsScreen onBack={() => setShowReportDetail(false)} />;
+    }
+
     // Transaction History content
     const renderTransactionsContent = () => {
       if (historyScreen === 'edit' && selectedTransaction) {
@@ -393,7 +402,12 @@ const AppContent: React.FC = () => {
             />
           );
         }
-        return <ProfileScreen onNavigateToChangePassword={() => setShowChangePassword(true)} />;
+        return (
+          <ProfileScreen
+            onNavigateToChangePassword={() => setShowChangePassword(true)}
+            onNavigateToReports={() => setShowReportDetail(true)}
+          />
+        );
       default:
         return (
           <HomeScreen

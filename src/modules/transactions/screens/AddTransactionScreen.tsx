@@ -1,7 +1,7 @@
 // SmartSpend AI - Add Transaction Screen (Frame 8)
 // UC07: Add Manual Transaction
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { Colors } from '../../../shared/constants/colors';
 import { Category } from '../../../shared/types';
@@ -50,6 +51,8 @@ const AddTransactionScreen: React.FC<AddTransactionScreenProps> = ({
   const [note, setNote] = useState<string>('');
   const [transactionNameError, setTransactionNameError] = useState<string>('');
   const [amountError, setAmountError] = useState<string>('');
+  const [isSaving, setIsSaving] = useState(false);
+  const isSavingRef = useRef(false);
 
   // Success state - shows inline success message instead of Alert
   const [showSuccess, setShowSuccess] = useState(false);
@@ -73,7 +76,11 @@ const AddTransactionScreen: React.FC<AddTransactionScreenProps> = ({
   }, [onClose]);
 
   // Handle save - main save logic
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
+    if (isSavingRef.current) {
+      return;
+    }
+
     // Reset error
     setTransactionNameError('');
     setAmountError('');
@@ -104,29 +111,39 @@ const AddTransactionScreen: React.FC<AddTransactionScreenProps> = ({
       return;
     }
 
-    // Create transaction
-    addTransaction({
-      userId: 'user-1',
-      name: trimmedTransactionName,
-      amount: numericAmount,
-      type: transactionType,
-      categoryId: selectedCategory.id,
-      category: selectedCategory,
-      date: dateTime,
-      note: note.trim() || undefined,
-    });
+    try {
+      isSavingRef.current = true;
+      setIsSaving(true);
 
-    // Show success message inline
-    setShowSuccess(true);
+      // Create transaction
+      await addTransaction({
+        userId: 'user-1',
+        name: trimmedTransactionName,
+        amount: numericAmount,
+        type: transactionType,
+        categoryId: selectedCategory.id,
+        category: selectedCategory,
+        date: dateTime,
+        note: note.trim() || undefined,
+      });
 
-    // Navigate back after a short delay
-    setTimeout(() => {
-      if (onSaved) {
-        onSaved();
-      } else if (onClose) {
-        onClose();
-      }
-    }, 1500);
+      // Show success message inline
+      setShowSuccess(true);
+
+      // Navigate back after a short delay
+      setTimeout(() => {
+        if (onSaved) {
+          onSaved();
+        } else if (onClose) {
+          onClose();
+        }
+      }, 1500);
+    } catch (error: any) {
+      Alert.alert('Không thể lưu giao dịch', error?.message || 'Vui lòng thử lại sau.');
+    } finally {
+      isSavingRef.current = false;
+      setIsSaving(false);
+    }
   }, [amount, selectedCategory, transactionName, transactionType, dateTime, note, addTransaction, onSaved, onClose]);
 
   // Handle AI scan - navigate to AI Scanner Screen
@@ -245,7 +262,11 @@ const AddTransactionScreen: React.FC<AddTransactionScreenProps> = ({
           <AIScanButton onPress={handleScanReceipt} />
 
           {/* Save Button */}
-          <SaveButton onPress={handleSave} />
+          <SaveButton
+            onPress={handleSave}
+            disabled={isSaving}
+            label={isSaving ? 'ĐANG LƯU...' : 'LƯU LẠI'}
+          />
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

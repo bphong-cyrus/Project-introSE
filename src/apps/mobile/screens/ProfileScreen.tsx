@@ -100,9 +100,10 @@ const getFeedbackPriorityLabel = (priority: FeedbackPriority) => {
 
 interface ProfileScreenProps {
   onNavigateToChangePassword?: () => void;
+  onNavigateToReports?: () => void;
 }
 
-const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigateToChangePassword }) => {
+const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigateToChangePassword, onNavigateToReports }) => {
   const { user, logout, updateProfile, isLoading } = useAuth();
   const displayName = user?.fullName?.trim() || 'Người dùng';
   const avatarLetter = displayName.charAt(0).toUpperCase();
@@ -461,10 +462,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigateToChangePasswor
     }
   }, [feedbackForm, resetFeedbackForm, showFeedbackSuccessToast, uploadFeedbackAttachment, user]);
 
-  const navigatePlaceholder = (title: string) => {
-    Alert.alert(title, 'Màn hình này đã được chuẩn bị route placeholder và sẽ được tích hợp ở bước tiếp theo.');
-  };
-
   const currentFeedbackPriority = getDefaultFeedbackPriority(
     feedbackForm.category,
     feedbackForm.subject,
@@ -540,6 +537,46 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigateToChangePasswor
             <Text style={styles.infoValue}>{formatCurrency(user?.income)}</Text>
           </View>
         </View>
+
+        <TouchableOpacity
+          style={styles.reportCard}
+          onPress={onNavigateToReports}
+          activeOpacity={0.86}
+        >
+          <View style={styles.reportCardTop}>
+            <View style={styles.reportIconCircle}>
+              <Ionicons name="analytics" size={26} color={Colors.primary} />
+            </View>
+            <View style={styles.reportBadge}>
+              <Ionicons name="sparkles" size={12} color="#FFFFFF" />
+              <Text style={styles.reportBadgeText}>Báo cáo chính</Text>
+            </View>
+          </View>
+          <Text style={styles.reportTitle}>Báo cáo & Phân tích tài chính</Text>
+          <Text style={styles.reportDescription}>
+            Xem biểu đồ thu chi, cơ cấu danh mục, tuân thủ ngân sách và xuất Excel/CSV chi tiết.
+          </Text>
+          <View style={styles.reportFooter}>
+            <View style={styles.reportFeatureRow}>
+              <View style={styles.reportFeature}>
+                <Ionicons name="pie-chart-outline" size={15} color="#DFF8EF" />
+                <Text style={styles.reportFeatureText}>Danh mục</Text>
+              </View>
+              <View style={styles.reportFeature}>
+                <Ionicons name="trending-up-outline" size={15} color="#DFF8EF" />
+                <Text style={styles.reportFeatureText}>Xu hướng</Text>
+              </View>
+              <View style={styles.reportFeature}>
+                <Ionicons name="download-outline" size={15} color="#DFF8EF" />
+                <Text style={styles.reportFeatureText}>Export</Text>
+              </View>
+            </View>
+            <View style={styles.reportCta}>
+              <Text style={styles.reportCtaText}>Xem chi tiết</Text>
+              <Ionicons name="arrow-forward" size={15} color={Colors.primary} />
+            </View>
+          </View>
+        </TouchableOpacity>
 
         <Text style={styles.sectionLabel}>Khác</Text>
         <View style={styles.menuGroup}>
@@ -819,6 +856,98 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: Colors.textPrimary,
+  },
+  reportCard: {
+    marginTop: 16,
+    borderRadius: 22,
+    backgroundColor: Colors.primary,
+    padding: 18,
+    shadowColor: Colors.primary,
+    shadowOpacity: 0.26,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 7,
+  },
+  reportCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  reportIconCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reportBadge: {
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+  },
+  reportBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  reportTitle: {
+    color: '#FFFFFF',
+    fontSize: 19,
+    fontWeight: '700',
+    lineHeight: 25,
+  },
+  reportDescription: {
+    marginTop: 8,
+    color: '#DFF8EF',
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '600',
+  },
+  reportFooter: {
+    marginTop: 16,
+    gap: 12,
+  },
+  reportFeatureRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  reportFeature: {
+    minHeight: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+  },
+  reportFeatureText: {
+    color: '#DFF8EF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  reportCta: {
+    alignSelf: 'flex-start',
+    minHeight: 36,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+  },
+  reportCtaText: {
+    color: Colors.primary,
+    fontSize: 13,
+    fontWeight: '700',
   },
   switchMock: {
     width: 32,

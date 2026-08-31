@@ -24,6 +24,8 @@ import { useTransactions } from '../../../state/TransactionContext';
 import { useCategories } from '../../../state/CategoryContext';
 import { useAuth } from '../../../state/AuthContext';
 import { useNotifications } from '../../../state/NotificationContext';
+import { useMonthlyBudgetIncome } from '../../../modules/budgets/hooks/useMonthlyBudgetIncome';
+import type { TabName } from '../navigation/BottomTabBar';
 
 // ========== HELPER FUNCTIONS ==========
 const formatDate = (date: Date): string => {
@@ -283,9 +285,6 @@ const transactionStyles = StyleSheet.create({
   },
 });
 
-// ========== MAIN HOME SCREEN ==========
-type TabName = 'Home' | 'Transactions' | 'Add' | 'Budget' | 'Profile';
-
 interface HomeScreenProps {
   onTabChange?: (tab: TabName) => void;
   onDateSelect?: (date: Date) => void;
@@ -296,6 +295,8 @@ interface HomeScreenProps {
 const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange, onDateSelect, onNotificationsPress, onSettingsPress }) => {
   const [activeTab, setActiveTab] = useState<TabName>('Home');
   const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
   const [selectedChartMonth, setSelectedChartMonth] = useState(now.getMonth());
   const [selectedChartYear, setSelectedChartYear] = useState(now.getFullYear());
   const [showMonthPicker, setShowMonthPicker] = useState(false);
@@ -303,6 +304,14 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange, onDateSelect, onNo
   const { expenseCategories } = useCategories();
   const { user } = useAuth();
   const { unreadCount } = useNotifications();
+  const {
+    totalIncome: dashboardTotalIncome,
+    totalExpense: dashboardTotalExpense,
+    savings: dashboardAvailableBalance,
+  } = useMonthlyBudgetIncome(currentMonth, currentYear);
+  const {
+    incomeBreakdown,
+  } = useMonthlyBudgetIncome(selectedChartMonth, selectedChartYear);
   const displayName = user?.fullName?.trim() || 'Người dùng';
   const monthButtonLabel = `Tháng ${selectedChartMonth + 1}, ${selectedChartYear}`;
 
@@ -362,30 +371,6 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange, onDateSelect, onNo
       })
       .sort((a, b) => b.amount - a.amount);
   }, [transactions, expenseCategories, selectedChartMonth, selectedChartYear]);
-
-  // Calculate summary from real transactions
-  const summaryData = useMemo(() => {
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-
-    const monthTransactions = transactions.filter(t => {
-      const txnDate = new Date(t.date);
-      return txnDate.getMonth() === currentMonth && txnDate.getFullYear() === currentYear;
-    });
-
-    const totalIncome = monthTransactions
-      .filter(t => t.type === 'income')
-      .reduce((sum, t) => sum + t.amount, 0);
-
-    const totalExpense = monthTransactions
-      .filter(t => t.type === 'expense')
-      .reduce((sum, t) => sum + t.amount, 0);
-
-    const balance = totalIncome - totalExpense;
-
-    return { balance, totalIncome, totalExpense };
-  }, [transactions]);
 
   // Recent transactions (max 5, sorted by date descending)
   const recentTransactions = useMemo(() => {
@@ -460,20 +445,20 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange, onDateSelect, onNo
         <View style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>Số dư khả dụng</Text>
           <Text style={styles.balanceAmount}>
-            {formatCurrency(summaryData.balance)}
+            {formatCurrency(dashboardAvailableBalance)}
           </Text>
           <View style={styles.balanceDivider} />
           <View style={styles.balanceStats}>
             <View style={styles.balanceStatItem}>
               <Text style={styles.balanceStatLabel}>Tổng thu nhập</Text>
               <Text style={styles.incomeText}>
-                +{formatCurrency(summaryData.totalIncome)}
+                +{formatCurrency(dashboardTotalIncome)}
               </Text>
             </View>
             <View style={styles.balanceStatItem}>
               <Text style={styles.balanceStatLabel}>Tổng chi tiêu</Text>
               <Text style={styles.expenseText}>
-                -{formatCurrency(summaryData.totalExpense)}
+                -{formatCurrency(dashboardTotalExpense)}
               </Text>
             </View>
           </View>
@@ -494,7 +479,15 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onTabChange, onDateSelect, onNo
           </View>
           <View style={styles.categoryCard}>
             {/* Modern Pie Chart - now uses real data */}
-            <PieChart data={categoryBreakdown} size={220} />
+            <PieChart data={categoryBreakdown} size={220} centerLabel="Tổng chi tiêu" selectedAmountColor="#E74C3C" totalAmountColor="#E74C3C" />
+          </View>
+        </View>
+
+        {/* ========== KHUNG 3B: CƠ CẤU THU NHẬP ========== */}
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle}>Cơ cấu thu nhập</Text>
+          <View style={styles.categoryCard}>
+            <PieChart data={incomeBreakdown} size={220} centerLabel="Tổng thu nhập" selectedAmountColor="#2ECC71" totalAmountColor="#2ECC71" />
           </View>
         </View>
 

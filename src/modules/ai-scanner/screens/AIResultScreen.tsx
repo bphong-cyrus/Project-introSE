@@ -1,7 +1,7 @@
 // SmartSpend AI - AI Result Screen (Frame 10)
 // UC13: Edit and confirm AI-extracted receipt data
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -59,6 +59,8 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
   const [dateError, setDateError] = useState<string>('');
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const isSavingRef = useRef(false);
 
   const categories = getCategoriesByType(transactionType);
   const expenseCategories = getCategoriesByType('expense');
@@ -111,6 +113,10 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
 
   // Handle save
   const handleSave = useCallback(async () => {
+    if (isSavingRef.current) {
+      return;
+    }
+
     setTransactionNameError('');
     setStoreNameError('');
     setAmountError('');
@@ -157,6 +163,9 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
     finalDate.setMinutes(minutes);
 
     try {
+      isSavingRef.current = true;
+      setIsSaving(true);
+
       await addTransaction({
         userId: '',
         name: trimmedTransactionName,
@@ -176,6 +185,9 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
       }, 1500);
     } catch (error: any) {
       Alert.alert('Không thể lưu giao dịch', error?.message || 'Vui lòng thử lại sau.');
+    } finally {
+      isSavingRef.current = false;
+      setIsSaving(false);
     }
   }, [amount, transactionName, storeName, selectedCategory, date, dateEdited, timeString, note, transactionType, data.imageUri, addTransaction, onSaved]);
 
@@ -442,11 +454,14 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
         {/* Save Button */}
         <View style={styles.saveButtonWrapper}>
           <TouchableOpacity
-            style={styles.saveButton}
+            style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
             onPress={handleSave}
+            disabled={isSaving}
             activeOpacity={0.8}
           >
-            <Text style={styles.saveButtonText}>LƯU GIAO DỊCH</Text>
+            <Text style={styles.saveButtonText}>
+              {isSaving ? 'ĐANG LƯU...' : 'LƯU GIAO DỊCH'}
+            </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -692,6 +707,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 6,
     elevation: 3,
+  },
+  saveButtonDisabled: {
+    opacity: 0.6,
   },
   saveButtonText: {
     color: '#FFFFFF',

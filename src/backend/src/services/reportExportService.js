@@ -53,14 +53,25 @@ function toNumber(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
-function safeName(value) {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^\w.-]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 60) || 'report';
+function pad2(value) {
+  return String(value).padStart(2, '0');
+}
+
+function buildExportTimestamp(date = new Date()) {
+  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+  return [
+    safeDate.getFullYear(),
+    pad2(safeDate.getMonth() + 1),
+    pad2(safeDate.getDate()),
+    '_',
+    pad2(safeDate.getHours()),
+    pad2(safeDate.getMinutes()),
+    pad2(safeDate.getSeconds()),
+  ].join('');
+}
+
+function buildFinancialReportFileName(year, month, generatedAt = new Date()) {
+  return `BaoCaoTaiChinh_SmartSpend_${year}${pad2(month)}_${buildExportTimestamp(generatedAt)}.xlsx`;
 }
 
 function getCategoryName(categoriesById, categoryId) {
@@ -78,6 +89,11 @@ function monthKey(date) {
 function monthLabelFromKey(key) {
   const [year, month] = key.split('-');
   return `T${Number(month)}/${year}`;
+}
+
+function parseMonthKey(key) {
+  const [year, month] = key.split('-').map(Number);
+  return { year, month };
 }
 
 function formatDate(value) {
@@ -130,7 +146,10 @@ function isRetryableReportExportConstraintError(error) {
 
 async function fetchReportData(supabase, userId, year, month) {
   const period = getPeriod(year, month);
-  const [profileResult, transactionsResult, categoriesResult, budgetResult] = await Promise.all([
+  const comparisonStart = new Date(Date.UTC(year, month - 6, 1));
+  const comparisonStartYear = comparisonStart.getUTCFullYear();
+  const comparisonEndYear = year;
+  const [profileResult, transactionsResult, categoriesResult, budgetResult, budgetRangeResult] = await Promise.all([
     supabase
       .from('user_profiles')
       .select('*')
@@ -153,9 +172,21 @@ async function fetchReportData(supabase, userId, year, month) {
       .eq('year', year)
       .eq('month', month)
       .maybeSingle(),
+    supabase
+      .from('budgets')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('year', comparisonStartYear)
+      .lte('year', comparisonEndYear),
   ]);
 
-  const errors = [profileResult.error, transactionsResult.error, categoriesResult.error, budgetResult.error].filter(Boolean);
+  const errors = [
+    profileResult.error,
+    transactionsResult.error,
+    categoriesResult.error,
+    budgetResult.error,
+    budgetRangeResult.error,
+  ].filter(Boolean);
   if (errors.length > 0) throw errors[0];
 
   let allocations = [];
@@ -180,6 +211,7 @@ async function fetchReportData(supabase, userId, year, month) {
     monthlyTransactions,
     categories: categoriesResult.data || [],
     budget: budgetResult.data,
+    rangeBudgets: budgetRangeResult.data || [],
     allocations,
     period,
   };
@@ -187,20 +219,30 @@ async function fetchReportData(supabase, userId, year, month) {
 
 function calculateReportData(data, year, month) {
   const categoriesById = new Map(data.categories.map((category) => [category.category_id, category]));
-  const monthlyIncome = data.monthlyTransactions
+  const profileDefaultIncome = Math.max(0, toNumber(data.profile?.initial_income));
+  const fixedMonthlyIncome = data.budget?.expected_income_amount != null
+    ? Math.max(0, toNumber(data.budget.expected_income_amount))
+    : profileDefaultIncome;
+  const variableMonthlyIncome = data.monthlyTransactions
     .filter((transaction) => transaction.type === 'income')
     .reduce((sum, transaction) => sum + toNumber(transaction.amount), 0);
+  const monthlyIncome = fixedMonthlyIncome + variableMonthlyIncome;
   const monthlyExpense = data.monthlyTransactions
     .filter((transaction) => transaction.type === 'expense')
     .reduce((sum, transaction) => sum + toNumber(transaction.amount), 0);
 
   const categoryExpenseMap = new Map();
+  const categoryExpenseCountMap = new Map();
   data.monthlyTransactions
     .filter((transaction) => transaction.type === 'expense')
     .forEach((transaction) => {
       categoryExpenseMap.set(
         transaction.category_id,
         (categoryExpenseMap.get(transaction.category_id) || 0) + toNumber(transaction.amount)
+      );
+      categoryExpenseCountMap.set(
+        transaction.category_id,
+        (categoryExpenseCountMap.get(transaction.category_id) || 0) + 1
       );
     });
 
@@ -209,18 +251,30 @@ function calculateReportData(data, year, month) {
       categoryId,
       label: getCategoryName(categoriesById, categoryId),
       value: amount,
+      transactionCount: categoryExpenseCountMap.get(categoryId) || 0,
+      percentage: monthlyExpense > 0 ? amount / monthlyExpense : 0,
       color: getCategoryColor(categoriesById, categoryId, index),
     }))
     .sort((a, b) => b.value - a.value);
 
-  const weeklyExpenses = Array.from({ length: 5 }, (_, index) => ({ label: `Tuần ${index + 1}`, value: 0, color: PRIMARY_BY_WEEK[index] }));
+  const weeklyExpenses = Array.from({ length: 5 }, (_, index) => ({
+    label: `Tuần ${index + 1}`,
+    value: 0,
+    transactionCount: 0,
+    percentage: 0,
+    color: PRIMARY_BY_WEEK[index],
+  }));
   data.monthlyTransactions
     .filter((transaction) => transaction.type === 'expense')
     .forEach((transaction) => {
       const day = Number(transaction.transaction_date.slice(8, 10));
       const weekIndex = Math.min(4, Math.max(0, Math.ceil(day / 7) - 1));
       weeklyExpenses[weekIndex].value += toNumber(transaction.amount);
+      weeklyExpenses[weekIndex].transactionCount += 1;
     });
+  weeklyExpenses.forEach((item) => {
+    item.percentage = monthlyExpense > 0 ? item.value / monthlyExpense : 0;
+  });
 
   const selectedStart = new Date(Date.UTC(year, month - 1, 1));
   const monthlyComparisonKeys = [];
@@ -228,34 +282,90 @@ function calculateReportData(data, year, month) {
     const date = new Date(Date.UTC(selectedStart.getUTCFullYear(), selectedStart.getUTCMonth() - i, 1));
     monthlyComparisonKeys.push(monthKey(date));
   }
-  const monthlyComparisonMap = new Map(monthlyComparisonKeys.map((key) => [key, 0]));
-  data.transactions
-    .filter((transaction) => transaction.type === 'expense')
-    .forEach((transaction) => {
-      const date = new Date(`${transaction.transaction_date}T00:00:00Z`);
-      const key = monthKey(date);
-      if (monthlyComparisonMap.has(key)) {
-        monthlyComparisonMap.set(key, (monthlyComparisonMap.get(key) || 0) + toNumber(transaction.amount));
-      }
-    });
-
-  const monthlyComparison = [...monthlyComparisonMap.entries()].map(([key, value]) => ({
-    label: monthLabelFromKey(key),
-    value,
+  const budgetByMonth = new Map((data.rangeBudgets || []).map((budget) => [
+    monthKey(new Date(Date.UTC(budget.year, budget.month - 1, 1))),
+    budget,
+  ]));
+  const monthlyComparisonMap = new Map(monthlyComparisonKeys.map((key) => {
+    const { year: itemYear, month: itemMonth } = parseMonthKey(key);
+    const budget = budgetByMonth.get(key);
+    const fixedIncome = budget?.expected_income_amount != null
+      ? Math.max(0, toNumber(budget.expected_income_amount))
+      : profileDefaultIncome;
+    return [key, {
+      key,
+      label: monthLabelFromKey(key),
+      year: itemYear,
+      month: itemMonth,
+      fixedIncome,
+      variableIncome: 0,
+      income: fixedIncome,
+      expense: 0,
+      budget: Math.max(0, toNumber(budget?.total_budget_amount)),
+      savings: fixedIncome,
+      transactionCount: 0,
+    }];
   }));
 
+  data.transactions.forEach((transaction) => {
+    const date = new Date(`${transaction.transaction_date}T00:00:00Z`);
+    const key = monthKey(date);
+    const row = monthlyComparisonMap.get(key);
+    if (!row) return;
+
+    row.transactionCount += 1;
+    if (transaction.type === 'income') {
+      const amount = toNumber(transaction.amount);
+      row.variableIncome += amount;
+      row.income += amount;
+    } else if (transaction.type === 'expense') {
+      row.expense += toNumber(transaction.amount);
+    }
+    row.savings = row.income - row.expense;
+  });
+
+  const multiMonthComparison = [...monthlyComparisonMap.values()];
+  const monthlyComparison = multiMonthComparison.map((item) => ({
+    label: item.label,
+    value: item.expense,
+  }));
+
+  const allocationCategoryIds = new Set();
   const allocations = data.allocations.map((allocation, index) => {
-    const spent = toNumber(allocation.spent_amount) || (categoryExpenseMap.get(allocation.category_id) || 0);
+    allocationCategoryIds.add(allocation.category_id);
+    const spent = categoryExpenseMap.get(allocation.category_id) || toNumber(allocation.spent_amount);
     const allocated = toNumber(allocation.allocated_amount);
+    const percentage = allocated > 0 ? spent / allocated : 0;
     return {
       categoryId: allocation.category_id,
       categoryName: getCategoryName(categoriesById, allocation.category_id),
       allocated,
       spent,
       remaining: allocated - spent,
-      percentage: allocated > 0 ? spent / allocated : 0,
+      percentage,
+      status: allocated <= 0
+        ? 'Chưa đặt hạn mức'
+        : spent > allocated
+          ? 'Vượt hạn mức'
+          : percentage >= 0.8
+            ? 'Gần chạm hạn mức'
+            : 'An toàn',
       color: getCategoryColor(categoriesById, allocation.category_id, index),
     };
+  });
+
+  categoryExpenses.forEach((item, index) => {
+    if (allocationCategoryIds.has(item.categoryId)) return;
+    allocations.push({
+      categoryId: item.categoryId,
+      categoryName: item.label,
+      allocated: 0,
+      spent: item.value,
+      remaining: -item.value,
+      percentage: 0,
+      status: 'Chưa đặt hạn mức',
+      color: item.color || getCategoryColor(categoriesById, item.categoryId, index),
+    });
   });
 
   const totalBudget = data.budget
@@ -264,19 +374,25 @@ function calculateReportData(data, year, month) {
 
   return {
     categoriesById,
+    fixedMonthlyIncome,
+    variableMonthlyIncome,
     monthlyIncome,
     monthlyExpense,
     monthlyBalance: monthlyIncome - monthlyExpense,
     categoryExpenses,
     weeklyExpenses,
     monthlyComparison,
+    multiMonthComparison,
     allocations,
     totalBudget,
-    totalBudgetSpent: allocations.reduce((sum, allocation) => sum + allocation.spent, 0),
+    totalBudgetSpent: monthlyExpense,
+    savingsRate: monthlyIncome > 0 ? (monthlyIncome - monthlyExpense) / monthlyIncome : 0,
+    budgetUsageRate: totalBudget > 0 ? monthlyExpense / totalBudget : 0,
   };
 }
 
 const PRIMARY_BY_WEEK = ['#167B63', '#2A9D8F', '#F39C12', '#E74C3C', '#3498DB'];
+const CURRENCY_NUM_FORMAT = '#,##0 [$₫-vi-VN];[Red]-#,##0 [$₫-vi-VN]';
 
 function configureWorksheet(worksheet) {
   worksheet.views = [{ state: 'frozen', ySplit: 1 }];
@@ -290,8 +406,18 @@ function configureWorksheet(worksheet) {
 
 function setCurrencyColumn(worksheet, indexes) {
   indexes.forEach((index) => {
-    worksheet.getColumn(index).numFmt = '#,##0 [$₫-vi-VN];[Red]-#,##0 [$₫-vi-VN]';
+    worksheet.getColumn(index).numFmt = CURRENCY_NUM_FORMAT;
   });
+}
+
+function setCurrencyCell(cell) {
+  cell.numFmt = CURRENCY_NUM_FORMAT;
+}
+
+function addSummaryRow(worksheet, metric, value, note = '', isCurrency = true) {
+  const row = worksheet.addRow({ metric, value, note });
+  if (isCurrency) setCurrencyCell(row.getCell(2));
+  return row;
 }
 
 function addOverviewSheet(workbook, data, calculations, year, month, userEmail) {
@@ -319,6 +445,160 @@ function addOverviewSheet(workbook, data, calculations, year, month, userEmail) 
     { metric: 'Múi giờ hồ sơ', value: profile.time_zone || 'Asia/Ho_Chi_Minh' },
   ]);
   setCurrencyColumn(worksheet, [2]);
+}
+
+function addMonthlyFinancialSummarySheet(workbook, data, calculations, year, month, userEmail) {
+  const worksheet = workbook.addWorksheet('Tổng hợp tài chính tháng');
+  worksheet.columns = [
+    { header: 'Chỉ số', key: 'metric', width: 32 },
+    { header: 'Giá trị', key: 'value', width: 22 },
+    { header: 'Ghi chú', key: 'note', width: 46 },
+  ];
+  configureWorksheet(worksheet);
+
+  const incomeTransactions = data.monthlyTransactions.filter((transaction) => transaction.type === 'income');
+  const expenseTransactions = data.monthlyTransactions.filter((transaction) => transaction.type === 'expense');
+  const topCategory = calculations.categoryExpenses[0];
+
+  addSummaryRow(worksheet, 'Người dùng', userEmail || data.profile?.full_name || '', 'Tài khoản tạo báo cáo', false);
+  addSummaryRow(worksheet, 'Kỳ báo cáo', `Tháng ${month}/${year}`, `${data.period.startDate} đến ${data.period.endDateInclusive}`, false);
+  addSummaryRow(worksheet, 'Thu nhập cố định', calculations.fixedMonthlyIncome, 'Lấy từ expected_income_amount hoặc initial_income');
+  addSummaryRow(worksheet, 'Thu nhập phát sinh', calculations.variableMonthlyIncome, `${incomeTransactions.length} giao dịch thu nhập`);
+  addSummaryRow(worksheet, 'Tổng thu nhập', calculations.monthlyIncome, 'Thu nhập cố định + phát sinh');
+  addSummaryRow(worksheet, 'Tổng chi tiêu', calculations.monthlyExpense, `${expenseTransactions.length} giao dịch chi tiêu`);
+  addSummaryRow(worksheet, 'Tiết kiệm', calculations.monthlyBalance, 'Tổng thu nhập - Tổng chi tiêu');
+  const savingsRateRow = addSummaryRow(worksheet, 'Tỷ lệ tiết kiệm', calculations.savingsRate, 'Tiết kiệm / Tổng thu nhập', false);
+  savingsRateRow.getCell(2).numFmt = '0.00%';
+  addSummaryRow(worksheet, 'Tổng hạn mức ngân sách', calculations.totalBudget, 'Từ budgets.total_budget_amount hoặc tổng hạn mức danh mục');
+  const budgetUsageRow = addSummaryRow(worksheet, 'Tỷ lệ dùng ngân sách', calculations.budgetUsageRate, 'Tổng chi tiêu / Tổng hạn mức', false);
+  budgetUsageRow.getCell(2).numFmt = '0.00%';
+  addSummaryRow(worksheet, 'Danh mục chi lớn nhất', topCategory?.label || 'Chưa có dữ liệu', topCategory ? `${(topCategory.percentage * 100).toFixed(1)}% tổng chi tiêu` : '', false);
+}
+
+function addWeeklyAllocationSheet(workbook, calculations) {
+  const worksheet = workbook.addWorksheet('Phân bổ chi tuần');
+  worksheet.columns = [
+    { header: 'Tuần', key: 'week', width: 18 },
+    { header: 'Chi tiêu', key: 'expense', width: 18 },
+    { header: 'Tỷ trọng tháng', key: 'percentage', width: 16 },
+    { header: 'Số giao dịch', key: 'transactionCount', width: 14 },
+  ];
+  configureWorksheet(worksheet);
+
+  calculations.weeklyExpenses.forEach((item) => {
+    worksheet.addRow({
+      week: item.label,
+      expense: item.value,
+      percentage: item.percentage,
+      transactionCount: item.transactionCount,
+    });
+  });
+
+  const totalRow = worksheet.addRow({
+    week: 'Tổng tháng',
+    expense: calculations.monthlyExpense,
+    percentage: calculations.monthlyExpense > 0 ? 1 : 0,
+    transactionCount: calculations.weeklyExpenses.reduce((sum, item) => sum + item.transactionCount, 0),
+  });
+  totalRow.font = { bold: true };
+  setCurrencyColumn(worksheet, [2]);
+  worksheet.getColumn(3).numFmt = '0.00%';
+}
+
+function addCategoryShareSheet(workbook, calculations) {
+  const worksheet = workbook.addWorksheet('Tỷ trọng danh mục');
+  worksheet.columns = [
+    { header: 'Danh mục', key: 'category', width: 28 },
+    { header: 'Chi tiêu', key: 'expense', width: 18 },
+    { header: 'Tỷ trọng', key: 'percentage', width: 16 },
+    { header: 'Số giao dịch', key: 'transactionCount', width: 14 },
+    { header: 'Bình quân/giao dịch', key: 'average', width: 20 },
+  ];
+  configureWorksheet(worksheet);
+
+  calculations.categoryExpenses.forEach((item) => {
+    worksheet.addRow({
+      category: item.label,
+      expense: item.value,
+      percentage: item.percentage,
+      transactionCount: item.transactionCount,
+      average: item.transactionCount > 0 ? item.value / item.transactionCount : 0,
+    });
+  });
+
+  setCurrencyColumn(worksheet, [2, 5]);
+  worksheet.getColumn(3).numFmt = '0.00%';
+}
+
+function addMultiMonthComparisonSheet(workbook, calculations) {
+  const worksheet = workbook.addWorksheet('So sánh nhiều tháng');
+  worksheet.columns = [
+    { header: 'Tháng', key: 'month', width: 16 },
+    { header: 'Thu nhập cố định', key: 'fixedIncome', width: 18 },
+    { header: 'Thu nhập phát sinh', key: 'variableIncome', width: 20 },
+    { header: 'Tổng thu nhập', key: 'income', width: 18 },
+    { header: 'Chi tiêu', key: 'expense', width: 18 },
+    { header: 'Ngân sách', key: 'budget', width: 18 },
+    { header: 'Tiết kiệm', key: 'savings', width: 18 },
+    { header: 'Số giao dịch', key: 'transactionCount', width: 14 },
+    { header: 'Tỷ lệ tiết kiệm', key: 'savingsRate', width: 16 },
+  ];
+  configureWorksheet(worksheet);
+
+  calculations.multiMonthComparison.forEach((item) => {
+    worksheet.addRow({
+      month: item.label,
+      fixedIncome: item.fixedIncome,
+      variableIncome: item.variableIncome,
+      income: item.income,
+      expense: item.expense,
+      budget: item.budget,
+      savings: item.savings,
+      transactionCount: item.transactionCount,
+      savingsRate: item.income > 0 ? item.savings / item.income : 0,
+    });
+  });
+
+  setCurrencyColumn(worksheet, [2, 3, 4, 5, 6, 7]);
+  worksheet.getColumn(9).numFmt = '0.00%';
+}
+
+function addBudgetComplianceSheet(workbook, calculations) {
+  const worksheet = workbook.addWorksheet('Tuân thủ ngân sách');
+  worksheet.columns = [
+    { header: 'Danh mục', key: 'category', width: 28 },
+    { header: 'Hạn mức', key: 'allocated', width: 18 },
+    { header: 'Đã chi', key: 'spent', width: 18 },
+    { header: 'Còn lại', key: 'remaining', width: 18 },
+    { header: 'Tỷ lệ sử dụng', key: 'percentage', width: 16 },
+    { header: 'Trạng thái', key: 'status', width: 18 },
+  ];
+  configureWorksheet(worksheet);
+
+  calculations.allocations.forEach((allocation) => {
+    worksheet.addRow({
+      category: allocation.categoryName,
+      allocated: allocation.allocated,
+      spent: allocation.spent,
+      remaining: allocation.remaining,
+      percentage: allocation.percentage,
+      status: allocation.status,
+    });
+  });
+
+  worksheet.addRow({
+    category: 'Tổng tháng',
+    allocated: calculations.totalBudget,
+    spent: calculations.monthlyExpense,
+    remaining: calculations.totalBudget - calculations.monthlyExpense,
+    percentage: calculations.totalBudget > 0 ? calculations.monthlyExpense / calculations.totalBudget : 0,
+    status: calculations.totalBudget > 0 && calculations.monthlyExpense > calculations.totalBudget
+      ? 'Vượt hạn mức'
+      : 'Tổng hợp',
+  }).font = { bold: true };
+
+  setCurrencyColumn(worksheet, [2, 3, 4]);
+  worksheet.getColumn(5).numFmt = '0.00%';
 }
 
 function addTransactionSheet(workbook, title, transactions, categoriesById) {
@@ -458,6 +738,11 @@ async function buildWorkbookBuffer(data, calculations, params) {
   workbook.properties.date1904 = false;
 
   addOverviewSheet(workbook, data, calculations, params.year, params.month, params.userEmail);
+  addMonthlyFinancialSummarySheet(workbook, data, calculations, params.year, params.month, params.userEmail);
+  addWeeklyAllocationSheet(workbook, calculations);
+  addCategoryShareSheet(workbook, calculations);
+  addMultiMonthComparisonSheet(workbook, calculations);
+  addBudgetComplianceSheet(workbook, calculations);
   addTransactionSheet(workbook, 'Giao dịch trong tháng', data.monthlyTransactions, calculations.categoriesById);
   addTransactionSheet(
     workbook,
@@ -477,7 +762,8 @@ async function createMonthlyReportExport({ supabase, userId, userEmail, year, mo
   const data = await fetchReportData(supabase, userId, normalized.year, normalized.month);
   const calculations = calculateReportData(data, normalized.year, normalized.month);
   const exportId = crypto.randomUUID();
-  const fileName = `SmartSpendAI-${safeName(userEmail || userId)}-${normalized.year}-${String(normalized.month).padStart(2, '0')}.xlsx`;
+  const generatedAt = new Date();
+  const fileName = buildFinancialReportFileName(normalized.year, normalized.month, generatedAt);
   const downloadPath = `${baseDownloadPath}/${exportId}/download`;
   const buffer = await buildWorkbookBuffer(data, calculations, {
     userEmail,
@@ -537,7 +823,7 @@ async function createMonthlyReportExport({ supabase, userId, userEmail, year, mo
       totalIncome: calculations.monthlyIncome,
       totalExpense: calculations.monthlyExpense,
       totalBudget: calculations.totalBudget,
-      generatedAt: new Date().toISOString(),
+      generatedAt: generatedAt.toISOString(),
     },
   };
 }
@@ -555,6 +841,7 @@ async function getExportRecord(supabase, userId, exportId) {
 }
 
 module.exports = {
+  buildFinancialReportFileName,
   createMonthlyReportExport,
   getExportFilePath: getReportFilePath,
   getExportRecord,

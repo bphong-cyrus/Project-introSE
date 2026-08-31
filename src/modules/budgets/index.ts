@@ -7,3 +7,4 @@ export { default as BudgetCategoryCard } from './components/BudgetCategoryCard';
 export { default as IncomeCategoryCard } from './components/IncomeCategoryCard';
 export { default as RadialGauge } from './components/RadialGauge';
 export { default as BudgetWarningBanner } from './components/BudgetWarningBanner';
+export { useMonthlyBudgetIncome } from './hooks/useMonthlyBudgetIncome';

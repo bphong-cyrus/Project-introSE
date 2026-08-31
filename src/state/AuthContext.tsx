@@ -268,7 +268,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           setUser(null);
           setAuthState('unauthenticated');
           await supabase.auth.signOut();
+          return;
         }
+
+        setUser(mapSupabaseUser(nextProfile, user.email));
       }
     );
 
@@ -277,7 +280,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id]);
+  }, [user?.email, user?.id]);
 
   // Login with email/password
   const login = useCallback(async (email: string, password: string): Promise<{ success: boolean; message: string }> => {

@@ -3,7 +3,7 @@
 // Features:
 // - Semi-circle arc design
 // - Dynamic color: Green (<50%), Orange (50-80%), Red (>80%)
-// - Center info display with total budget and income
+// - Center info display with total budget and usage percentage
 // - Smooth SVG-based rendering
 
 import React from 'react';
@@ -14,14 +14,12 @@ import { Colors } from '../../../shared/constants/colors';
 interface RadialGaugeProps {
   spent: number;
   total: number;
-  totalIncome?: number;
   size?: number;
 }
 
 const RadialGauge: React.FC<RadialGaugeProps> = ({
   spent,
   total,
-  totalIncome,
   size = 260
 }) => {
   const progress = total > 0 ? Math.min(spent / total, 1) : 0;
@@ -94,12 +92,6 @@ const RadialGauge: React.FC<RadialGaugeProps> = ({
         <Text style={[styles.percentage, { color: strokeColor }]}>
           {percentage}%
         </Text>
-        {totalIncome && (
-          <View style={styles.incomeRow}>
-            <Text style={styles.incomeLabel}>Thu nhập: </Text>
-            <Text style={styles.incomeValue}>{formatCurrency(totalIncome)}</Text>
-          </View>
-        )}
       </View>
     </View>
   );
@@ -128,20 +120,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     marginTop: 2,
-  },
-  incomeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 6,
-  },
-  incomeLabel: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-  },
-  incomeValue: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: Colors.textPrimary,
   },
 });
 

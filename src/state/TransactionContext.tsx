@@ -24,6 +24,33 @@ interface TransactionContextValue {
 
 const TransactionContext = createContext<TransactionContextValue | undefined>(undefined);
 
+const dedupeTransactionsById = (items: Transaction[]): Transaction[] => {
+  const seenIds = new Set<string>();
+
+  return items.filter((item) => {
+    if (seenIds.has(item.id)) {
+      return false;
+    }
+
+    seenIds.add(item.id);
+    return true;
+  });
+};
+
+const upsertTransactionById = (items: Transaction[], nextItem: Transaction): Transaction[] => {
+  let replaced = false;
+  const updatedItems = items.map((item) => {
+    if (item.id !== nextItem.id) {
+      return item;
+    }
+
+    replaced = true;
+    return nextItem;
+  });
+
+  return dedupeTransactionsById(replaced ? updatedItems : [nextItem, ...items]);
+};
+
 export const TransactionProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { user } = useAuth();
   const { allCategories } = useCategories();
@@ -52,7 +79,7 @@ export const TransactionProvider: React.FC<{ children: ReactNode }> = ({ childre
     try {
       setIsLoading(true);
       const data = await transactionRepository.getAll(currentUserId);
-      setTransactions(data.map(attachCategory));
+      setTransactions(dedupeTransactionsById(data.map(attachCategory)));
     } catch (error) {
       console.error('Failed to load transactions:', error);
       setTransactions([]);
@@ -96,10 +123,28 @@ export const TransactionProvider: React.FC<{ children: ReactNode }> = ({ childre
     refreshTransactions();
   }, [refreshTransactions]);
 
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    const channel = supabase.channel(`transactions-realtime-${currentUserId}`);
+    channel.on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'transactions', filter: `user_id=eq.${currentUserId}` },
+      () => {
+        refreshTransactions();
+      }
+    );
+    channel.subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUserId, refreshTransactions]);
+
   // Categories can load after transactions. Re-attach category objects when they change
   // so history cards can display category name/icon/color instead of the fallback.
   useEffect(() => {
-    setTransactions(prev => prev.map(attachCategory));
+    setTransactions(prev => dedupeTransactionsById(prev.map(attachCategory)));
   }, [attachCategory]);
 
   const addTransaction = useCallback(async (transactionData: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>): Promise<Transaction> => {
@@ -120,7 +165,7 @@ export const TransactionProvider: React.FC<{ children: ReactNode }> = ({ childre
       if (saved) {
         await evaluateBudgetWarnings(saved);
         const savedWithCategory = attachCategory(saved);
-        setTransactions(prev => [savedWithCategory, ...prev]);
+        setTransactions(prev => upsertTransactionById(prev, savedWithCategory));
         return savedWithCategory;
       }
     } catch (error) {
@@ -140,9 +185,10 @@ export const TransactionProvider: React.FC<{ children: ReactNode }> = ({ childre
       if (saved) {
         await evaluateBudgetWarnings(existingTransaction, saved);
         const savedWithCategory = attachCategory(saved);
-        setTransactions(prev => prev.map(txn =>
-          txn.id === id ? { ...txn, ...savedWithCategory, updatedAt: new Date() } : txn
-        ));
+        setTransactions(prev => upsertTransactionById(prev, {
+          ...savedWithCategory,
+          updatedAt: new Date(),
+        }));
         return savedWithCategory;
       }
     } catch (error) {

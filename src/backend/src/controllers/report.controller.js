@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const {
+  buildFinancialReportFileName,
   createMonthlyReportExport,
   getExportFilePath,
   getExportRecord,
@@ -46,7 +47,13 @@ async function downloadExport(req, res, next) {
       });
     }
 
-    const fileName = `SmartSpendAI-report-${record.period_start}-${record.period_end}.xlsx`;
+    const periodStart = new Date(`${record.period_start}T00:00:00Z`);
+    const createdAt = record.created_at ? new Date(record.created_at) : new Date();
+    const fileName = buildFinancialReportFileName(
+      periodStart.getUTCFullYear(),
+      periodStart.getUTCMonth() + 1,
+      createdAt,
+    );
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
     return res.sendFile(path.resolve(filePath));

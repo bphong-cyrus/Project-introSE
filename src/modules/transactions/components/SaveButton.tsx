@@ -11,16 +11,19 @@ import { Colors } from '../../../shared/constants/colors';
 
 interface SaveButtonProps {
   onPress: () => void;
+  disabled?: boolean;
+  label?: string;
 }
 
-const SaveButton: React.FC<SaveButtonProps> = ({ onPress }) => {
+const SaveButton: React.FC<SaveButtonProps> = ({ onPress, disabled = false, label = 'LƯU LẠI' }) => {
   return (
     <TouchableOpacity
-      style={styles.saveButton}
+      style={[styles.saveButton, disabled && styles.saveButtonDisabled]}
       onPress={onPress}
+      disabled={disabled}
       activeOpacity={0.8}
     >
-      <Text style={styles.saveButtonText}>LƯU LẠI</Text>
+      <Text style={styles.saveButtonText}>{label}</Text>
     </TouchableOpacity>
   );
 };
@@ -37,6 +40,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 6,
     elevation: 3,
+  },
+  saveButtonDisabled: {
+    opacity: 0.6,
   },
   saveButtonText: {
     color: '#FFFFFF',
