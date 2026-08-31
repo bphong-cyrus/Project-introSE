@@ -11,7 +11,7 @@ Mobile App (Expo/React Native)
 Express Backend (src/backend/)
         │ HTTP → Gemini API
         ▼
-Google AI Studio (Gemini 2.0 Flash vision)
+Google AI Studio (Gemini 3.5 Flash Lite vision)
         │ JSON structured response
         ▼
 ExtractedReceiptData → Mobile UI
@@ -19,7 +19,7 @@ ExtractedReceiptData → Mobile UI
 
 - **Port**: 4000
 - **Stack**: Node.js + Express.js
-- **AI Provider**: Google AI Studio — Gemini 2.0 Flash (free tier)
+- **AI Provider**: Google AI Studio — Gemini 3.5 Flash Lite
 - **File uploads**: multipart/form-data, max 4 MB
 - **API Key**: Nằm trong `.env`, không bao giờ lưu trong code
 
@@ -64,10 +64,15 @@ Tạo file `.env` trong thư mục `src/backend/` với nội dung:
 ```
 # Single-key legacy option (omit when using GEMINI_API_KEYS below):
 # GOOGLE_API_KEY=<paste-api-key-của-bạn-vào-đây>
-GEMINI_MODEL=gemini-3.6-flash
+GEMINI_MODEL=gemini-3.5-flash-lite
+GEMINI_FALLBACK_MODEL=gemini-3.5-flash
+AI_LOW_CONFIDENCE_RETRY=true
+AI_LOW_CONFIDENCE_RETRY_THRESHOLD=80
+AI_RETRY_TOTAL_BUDGET_MS=8000
 # Use this instead of GOOGLE_API_KEY when rotating multiple keys:
 GEMINI_API_KEYS=<key-1>,<key-2>,<key-3>,<key-4>
 GEMINI_KEY_COOLDOWN_MS=60000
+GEMINI_REQUEST_TIMEOUT_MS=15000
 PORT=4000
 MAX_UPLOAD_BYTES=4194304
 ```
@@ -255,7 +260,7 @@ Excel workbook gồm các sheet:
     "confidence": { "amount": 98, "storeName": 98, "date": 95, "category": 98, "type": 99 }
   },
   "meta": {
-    "model": "gemini-3.6-flash",
+    "model": "gemini-3.5-flash-lite",
     "usage": { "promptTokenCount": 1536, "candidatesTokenCount": 155, "totalTokenCount": 2715 }
   }
 }
@@ -285,6 +290,7 @@ Excel workbook gồm các sheet:
 
 - **Free tier Gemini**: 15 requests/phút, 1500 requests/ngày
 - **Image size**: tối đa 4MB mỗi ảnh
+- **AI performance target**: toàn bộ pipeline OCR/phân loại mục tiêu không quá 8 giây theo SAD; request Gemini bị hủy sau 15 giây để tránh treo demo.
 - **Key rotation**: nếu dùng nhiều key, server tự switch khi key nào bị quota
 
 ---

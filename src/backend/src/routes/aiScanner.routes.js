@@ -6,7 +6,7 @@ const controller = require('../controllers/aiScanner.controller');
 
 const router = express.Router();
 
-const MAX_BYTES = Number(process.env.MAX_UPLOAD_BYTES) || 20 * 1024 * 1024; // 20 MB
+const MAX_BYTES = Number(process.env.MAX_UPLOAD_BYTES) || 4 * 1024 * 1024;
 const MAX_MB = (MAX_BYTES / 1024 / 1024).toFixed(0);
 
 // Health / readiness
@@ -19,23 +19,18 @@ router.get('/categories', controller.listCategories);
 router.post(
   '/analyze',
   (req, res, next) => {
-    console.log('[DEBUG] POST /analyze incoming');
-    console.log('[DEBUG]   Content-Type:', req.headers['content-type']);
-    console.log('[DEBUG]   Body keys:', req.body ? Object.keys(req.body) : 'no body');
     upload.single('image')(req, res, (err) => {
       if (err) {
-        console.error('[DEBUG]   Multer error:', err.message, err.code);
         // Convert multer errors to a clean JSON 4xx response
-        const status = err.status || 400;
         const isTooLarge =
           err.code === 'LIMIT_FILE_SIZE' ||
           (typeof err.message === 'string' && err.message.toLowerCase().includes('file too large'));
+        const status = isTooLarge ? 413 : (err.status || 400);
         const message = isTooLarge
           ? `Ảnh quá lớn. Giới hạn ${MAX_MB} MB.`
           : err.message;
         return res.status(status).json({ success: false, error: message });
       }
-      console.log('[DEBUG]   req.file:', req.file ? `${req.file.fieldname} (${req.file.mimetype}, ${req.file.size} bytes)` : 'MISSING');
       next();
     });
   },

@@ -15,7 +15,32 @@ export interface AnalyzeReceiptResult {
   data: ExtractedReceiptData;
   meta?: {
     model?: string;
+    raw_result?: string;
     usage?: { input_tokens?: number; output_tokens?: number };
+    retry?: {
+      attempted: boolean;
+      succeeded: boolean;
+      threshold: number;
+      primaryModel: string;
+      fallbackModel?: string | null;
+      consensus?: {
+        allFieldsAgree: boolean;
+        agreedFields: string[];
+        disagreedFields: string[];
+      } | null;
+    };
+    // Performance metadata from backend
+    performance?: {
+      total_ms: number;
+      image_size_kb: number;
+      size_category: 'tiny' | 'small' | 'medium' | 'large' | 'xlarge';
+      gemini_ms?: number;
+      primary_ms?: number;
+      fallback_ms?: number;
+      retry_attempted?: boolean;
+      retry_succeeded?: boolean;
+      within_threshold: boolean;
+    };
   };
 }
 

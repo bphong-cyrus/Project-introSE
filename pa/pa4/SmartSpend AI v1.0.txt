@@ -1,0 +1,35 @@
+Link github: https://github.com/bphong-cyrus/Project-introSE
+SmartSpend AI 
+ - Account & Authentication
+	+ Sign up / Sign in / Sign out (email + password)
+	+ Login with Google (OAuth)
+	+ Forgot password via email OTP
+	+ Change password while logged in
+	+ Profile setup with personal info
+ - Transactions
+	+ Add, edit, delete income & expense transactions manually
+	+ View transaction history with filters (date, category, type, amount)
+	+ View detailed transaction info
+ - Categories
+	+ Manage expense & income categories (default + custom)
+	+ Add, edit, delete categories with icons & colors
+ - Budgets & Notifications
+	+ Set monthly budget with category-level limits
+	 Visual budget progress (radial gauge)
+	+ Auto warnings at 80% / 100% budget usage
+	+ In-app notification center with push reminders
+ - AI Receipt Scanner
+	+ Scan receipts via camera or photo library
+	+ AI auto-extracts amount, store, date, category
+	+ Classifies income vs expense
+	+ Review extracted data before saving
+ - Reports
+	+ Export monthly reports to Excel with charts
+	+ Share/download reports
+ - Admin Dashboard (Web)
+	+ Dashboard with metrics & charts
+	+ User management (active/inactive status)
+	+ Push notification campaigns (instant or scheduled)
+	+ AI scan logs viewer
+	+ User feedback management
+Summary: A complete personal finance management app with AI-powered receipt scanning, full transaction/budget/category CRUD, real-time budget warnings, monthly Excel reports, and an admin web dashboard — built with React Native (Expo) + Supabase + Express + Gemini AI.

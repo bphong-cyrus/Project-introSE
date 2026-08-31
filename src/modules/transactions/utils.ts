@@ -84,3 +84,4 @@ export const formatVNDInput = (value: string | number): string => {
   if (!num) return '';
   return num.toLocaleString('vi-VN');
 };
+export const MAX_TRANSACTION_AMOUNT = 2_000_000_000;
