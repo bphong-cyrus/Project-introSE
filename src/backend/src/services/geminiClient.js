@@ -7,9 +7,10 @@
 //   https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent
 // Auth: API key passed as the `x-goog-api-key` header.
 
-const DEFAULT_MODEL = 'gemini-2.0-flash';
+const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 const DEFAULT_URL_BASE =
   'https://generativelanguage.googleapis.com/v1beta/models';
+const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
 
 const { getPool, GeminiKeyPool } = require('./geminiKeyPool');
 
@@ -30,9 +31,11 @@ class GeminiApiError extends Error {
   }
 }
 
-function resolveConfig() {
+function resolveConfig(modelOverride) {
   const model =
-    process.env.GEMINI_MODEL && process.env.GEMINI_MODEL.trim().length > 0
+    modelOverride && String(modelOverride).trim().length > 0
+      ? String(modelOverride).trim()
+      : process.env.GEMINI_MODEL && process.env.GEMINI_MODEL.trim().length > 0
       ? process.env.GEMINI_MODEL
       : DEFAULT_MODEL;
   // Touch the pool so a missing-key env throws the friendly error at
@@ -69,8 +72,13 @@ function buildRequestBody({ mediaType, buffer, system, userPrompt, maxTokens, te
   };
 }
 
-async function callGeminiOnce({ apiKey, model, body }) {
+async function callGeminiOnce({ apiKey, model, body, requestTimeoutMs }) {
   const url = `${DEFAULT_URL_BASE}/${encodeURIComponent(model)}:generateContent`;
+  const timeoutMs = Number(requestTimeoutMs) ||
+    Number(process.env.GEMINI_REQUEST_TIMEOUT_MS) ||
+    DEFAULT_REQUEST_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let response;
   try {
     response = await fetch(url, {
@@ -80,13 +88,19 @@ async function callGeminiOnce({ apiKey, model, body }) {
         'x-goog-api-key': apiKey,
       },
       body: JSON.stringify(body),
+      signal: controller.signal,
     });
   } catch (e) {
+    const message = e && e.name === 'AbortError'
+      ? `Gemini xử lý quá ${Math.round(timeoutMs / 1000)} giây. Vui lòng thử lại hoặc nhập thủ công.`
+      : `Không thể kết nối tới Gemini API (${url}): ${e.message}`;
     throw new GeminiApiError(
-      `Không thể kết nối tới Gemini API (${url}): ${e.message}`,
-      502,
+      message,
+      e && e.name === 'AbortError' ? 504 : 502,
       null,
     );
+  } finally {
+    clearTimeout(timeout);
   }
 
   const text = await response.text();
@@ -131,6 +145,8 @@ async function callGeminiOnce({ apiKey, model, body }) {
  * @param {string} opts.userPrompt user prompt (text only)
  * @param {number} [opts.maxTokens=4096]
  * @param {number} [opts.temperature=0.1]
+ * @param {string} [opts.model] optional model override for a fallback pass
+ * @param {number} [opts.requestTimeoutMs] timeout for this specific pass
  * @returns {Promise<{rawText: string, model: string, usage: object, key: string}>}
  */
 async function analyzeReceipt({
@@ -140,8 +156,10 @@ async function analyzeReceipt({
   userPrompt,
   maxTokens = 4096,
   temperature = 0.1,
+  model: modelOverride,
+  requestTimeoutMs,
 }) {
-  const { model, pool } = resolveConfig();
+  const { model, pool } = resolveConfig(modelOverride);
   const body = buildRequestBody({
     mediaType,
     buffer,
@@ -152,7 +170,7 @@ async function analyzeReceipt({
   });
 
   const { value, key } = await pool.withFailover((apiKey) =>
-    callGeminiOnce({ apiKey, model, body }),
+    callGeminiOnce({ apiKey, model, body, requestTimeoutMs }),
   );
 
   return { ...value, key };

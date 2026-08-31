@@ -4,12 +4,11 @@
     "slug": "SmartSpendAI",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "sdkVersion": "54.0.0",
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./img/smartspend-logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#4CAF50"
     },
@@ -18,14 +17,10 @@
       "bundleIdentifier": "com.smartspendai.app"
     },
     "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#4CAF50"
-      },
       "package": "com.smartspendai.app"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./img/smartspend-logo.png"
     },
     "plugins": [
       "expo-font"

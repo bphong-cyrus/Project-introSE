@@ -6,6 +6,7 @@
 import {
   analyzeReceiptOnBackend,
   BackendApiError,
+  AnalyzeReceiptResult as BackendResult,
 } from './backendClient';
 import type { ExtractedReceiptData } from '../screens/AIScannerScreen';
 import type { Category } from '../../../shared/types';
@@ -20,6 +21,8 @@ export interface AnalyzeReceiptInput {
 export interface AnalyzeReceiptResult {
   data: ExtractedReceiptData;
   raw: string;
+  /** Performance metadata from backend */
+  performance?: BackendResult['meta']['performance'];
 }
 
 /** Send the image to the local Express backend (which talks to Gemini). */
@@ -34,7 +37,11 @@ export async function analyzeReceipt(
   });
   return {
     data,
-    raw: meta?.model ? `model=${meta.model}` : '',
+    raw: [
+      meta?.model ? `model=${meta.model}` : '',
+      meta?.raw_result || '',
+    ].filter(Boolean).join('\n'),
+    performance: meta?.performance,
   };
 }
 

@@ -25,7 +25,7 @@ import { useAuth } from '../../../state/AuthContext';
 
 interface OTPScreenProps {
   email: string;
-  purpose: 'register' | 'resetPassword';
+  purpose: 'register' | 'resetPassword' | 'changePassword';
   onVerified: () => void;
   onVerifiedWithToken?: (verificationToken: string) => void; // Callback cho reset password với token
   onBack: () => void;
