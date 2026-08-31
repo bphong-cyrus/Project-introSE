@@ -41,6 +41,7 @@ type AuthUserRow = Database['public']['Functions']['get_admin_auth_users']['Retu
 
 type AdminAuthState = 'loading' | 'unauthenticated' | 'authenticated' | 'denied';
 type AdminSection = 'dashboard' | 'users' | 'notifications' | 'ai_logs' | 'feedback';
+type DashboardTimeRange = 'month' | 'last_7_days' | 'last_30_days';
 type UserStatusFilter = 'all' | 'active' | 'inactive';
 type AiLogStatusFilter = 'all' | 'success' | 'failed' | 'reviewed' | 'unreviewed';
 type FeedbackStatusFilter = 'all' | 'pending' | 'in_progress' | 'resolved' | 'closed';
@@ -202,7 +203,7 @@ const getInitialAdminSection = (): AdminSection => {
 
 const getCanonicalStatus = (status?: string | null): 'active' | 'inactive' => {
   const normalized = (status || 'active').trim().toLowerCase();
-  return normalized === 'inactive' || normalized === 'deactive' || normalized === 'deactivated' || normalized === 'blocked'
+  return normalized === 'inactive' || normalized === 'banned' || normalized === 'deactive' || normalized === 'deactivated' || normalized === 'blocked'
     ? 'inactive'
     : 'active';
 };
@@ -244,6 +245,27 @@ const formatDate = (value?: string | null) => {
     month: '2-digit',
     year: 'numeric',
   }).format(date);
+};
+
+const parseIsoDateInput = (value: string): Date | null => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+
+  date.setHours(0, 0, 0, 0);
+  return date;
 };
 
 const formatDateTime = (value?: string | null) => {
@@ -431,6 +453,62 @@ const getPreviousMonth = (year: number, month: number) => {
   if (month === 0) return { year: year - 1, month: 11 };
   return { year, month: month - 1 };
 };
+
+const getRollingDayRange = (days: number, offset = 0) => {
+  const end = new Date();
+  end.setHours(0, 0, 0, 0);
+  end.setDate(end.getDate() + 1 - (days * offset));
+
+  const start = new Date(end);
+  start.setDate(start.getDate() - days);
+  return { start, end };
+};
+
+const getDashboardDateRange = (
+  year: number,
+  month: number,
+  range: DashboardTimeRange
+) => {
+  if (range === 'last_7_days') return getRollingDayRange(7);
+  if (range === 'last_30_days') return getRollingDayRange(30);
+  return getMonthRange(year, month);
+};
+
+const getPreviousDashboardDateRange = (
+  year: number,
+  month: number,
+  range: DashboardTimeRange
+) => {
+  if (range === 'last_7_days') return getRollingDayRange(7, 1);
+  if (range === 'last_30_days') return getRollingDayRange(30, 1);
+  const previous = getPreviousMonth(year, month);
+  return getMonthRange(previous.year, previous.month);
+};
+
+const formatShortDate = (date: Date) => new Intl.DateTimeFormat('vi-VN', {
+  day: '2-digit',
+  month: '2-digit',
+}).format(date);
+
+const getDashboardPeriodLabel = (
+  year: number,
+  month: number,
+  range: DashboardTimeRange
+) => {
+  if (range === 'month') return `${monthNames[month]} ${year}`;
+
+  const { start, end } = getDashboardDateRange(year, month, range);
+  const inclusiveEnd = new Date(end);
+  inclusiveEnd.setDate(inclusiveEnd.getDate() - 1);
+  const label = range === 'last_7_days' ? '7 ngày gần nhất' : '30 ngày gần nhất';
+  return `${label} (${formatShortDate(start)} - ${formatShortDate(inclusiveEnd)})`;
+};
+
+const DASHBOARD_TIME_RANGE_OPTIONS: { value: DashboardTimeRange; label: string }[] = [
+  { value: 'month', label: 'Theo tháng' },
+  { value: 'last_7_days', label: 'Last 7 days' },
+  { value: 'last_30_days', label: 'Last 30 days' },
+];
 
 const isWithinRange = (value: string | null | undefined, start: Date, end: Date) => {
   if (!value) return false;
@@ -763,6 +841,32 @@ const buildUserTrend = (
   });
 };
 
+const buildUserTrendForRange = (
+  authUsers: AuthUserRow[],
+  start: Date,
+  end: Date
+): TrendPoint[] => {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const daysToShow = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / dayMs));
+
+  return Array.from({ length: daysToShow }, (_, index) => {
+    const dayStart = new Date(start);
+    dayStart.setDate(start.getDate() + index);
+    const dayEnd = new Date(start);
+    dayEnd.setDate(start.getDate() + index + 1);
+
+    return {
+      label: formatShortDate(dayStart),
+      totalUsers: authUsers.filter((authUser) => {
+        const normalizedCreatedAt = normalizeAuthTimestamp(authUser.created_at);
+        if (!normalizedCreatedAt) return false;
+
+        return new Date(normalizedCreatedAt) < dayEnd;
+      }).length,
+    };
+  });
+};
+
 const LineChart: React.FC<{ data: TrendPoint[] }> = ({ data }) => {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const width = 620;
@@ -1010,6 +1114,7 @@ export default function AdminApp() {
   const [dashboardError, setDashboardError] = useState('');
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+  const [dashboardTimeRange, setDashboardTimeRange] = useState<DashboardTimeRange>('month');
   const [showAdminMenu, setShowAdminMenu] = useState(false);
   const [userSearch, setUserSearch] = useState('');
   const [userStatusFilter, setUserStatusFilter] = useState<UserStatusFilter>('all');
@@ -1035,6 +1140,7 @@ export default function AdminApp() {
   const [selectedCampaignUserIds, setSelectedCampaignUserIds] = useState<string[]>([]);
   const [campaignError, setCampaignError] = useState('');
   const [isSavingCampaign, setIsSavingCampaign] = useState(false);
+  const [editingCampaignId, setEditingCampaignId] = useState<string | null>(null);
   const [aiLogSearch, setAiLogSearch] = useState('');
   const [aiLogStatusFilter, setAiLogStatusFilter] = useState<AiLogStatusFilter>('all');
   const [selectedScanLogId, setSelectedScanLogId] = useState<string | null>(null);
@@ -1247,9 +1353,8 @@ export default function AdminApp() {
   }, [authState, loadDashboardData]);
 
   const metrics = useMemo(() => {
-    const { start, end } = getMonthRange(selectedYear, selectedMonth);
-    const previous = getPreviousMonth(selectedYear, selectedMonth);
-    const { start: previousStart, end: previousEnd } = getMonthRange(previous.year, previous.month);
+    const { start, end } = getDashboardDateRange(selectedYear, selectedMonth, dashboardTimeRange);
+    const { start: previousStart, end: previousEnd } = getPreviousDashboardDateRange(selectedYear, selectedMonth, dashboardTimeRange);
 
     const monthTransactions = dashboardData.transactions.filter((transaction) =>
       isWithinRange(transaction.transaction_date, start, end)
@@ -1313,7 +1418,10 @@ export default function AdminApp() {
       totalUsers: dashboardData.authUsers.length,
       activeUsers,
       growthRate,
-      userTrend: buildUserTrend(dashboardData.authUsers, selectedYear, selectedMonth),
+      periodLabel: getDashboardPeriodLabel(selectedYear, selectedMonth, dashboardTimeRange),
+      userTrend: dashboardTimeRange === 'month'
+        ? buildUserTrend(dashboardData.authUsers, selectedYear, selectedMonth)
+        : buildUserTrendForRange(dashboardData.authUsers, start, end),
       totalTransactions: monthTransactions.length,
       totalScanLogs: monthScans.length,
       failedScans: failedScans.length,
@@ -1330,7 +1438,7 @@ export default function AdminApp() {
       pendingFeedbackQueue,
       unresolvedBugs,
     };
-  }, [dashboardData, selectedMonth, selectedYear]);
+  }, [dashboardData, dashboardTimeRange, selectedMonth, selectedYear]);
 
   const userRows = useMemo(() => buildUserManagementRows(dashboardData), [dashboardData]);
 
@@ -1686,10 +1794,7 @@ export default function AdminApp() {
     if (!selectedFeedback || !adminProfile) return;
 
     const response = feedbackResponse.trim();
-    if (!response) {
-      setFeedbackError('Vui lòng nhập phản hồi của Admin trước khi lưu.');
-      return;
-    }
+    const hasResponse = response.length > 0;
 
     setIsSavingFeedback(true);
     setFeedbackError('');
@@ -1699,7 +1804,7 @@ export default function AdminApp() {
         .from('feedbacks')
         .update({
           status: feedbackDetailStatus,
-          admin_response: response,
+          admin_response: hasResponse ? response : null,
           internal_notes: feedbackInternalNotes.trim() || null,
           responded_at: nowIso,
           responded_by: adminProfile.user_id,
@@ -1714,11 +1819,13 @@ export default function AdminApp() {
           user_id: selectedFeedback.user_id,
           type: 'feedback_response',
           title: 'Phản hồi của bạn đã được xử lý',
-          body: `Đội ngũ hỗ trợ phản hồi góp ý "${selectedFeedback.subject}": ${response}`,
+          body: hasResponse
+            ? `Đội ngũ hỗ trợ phản hồi góp ý "${selectedFeedback.subject}": ${response}`
+            : `Trạng thái góp ý "${selectedFeedback.subject}" đã được cập nhật thành "${getFeedbackStatusLabel(feedbackDetailStatus)}".`,
           data: {
             feedback_id: selectedFeedback.feedback_id,
             status: feedbackDetailStatus,
-            admin_response: response,
+            admin_response: hasResponse ? response : null,
           },
           campaign_id: null,
         });
@@ -1810,8 +1917,8 @@ export default function AdminApp() {
     const dateOfBirth = editProfileForm.dateOfBirth.trim();
     if (dateOfBirth) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) return 'Ngày sinh phải có định dạng YYYY-MM-DD.';
-      const birthDate = new Date(`${dateOfBirth}T00:00:00`);
-      if (Number.isNaN(birthDate.getTime())) return 'Ngày sinh không hợp lệ.';
+      const birthDate = parseIsoDateInput(dateOfBirth);
+      if (!birthDate) return 'Ngày sinh không hợp lệ.';
       if (birthDate > new Date()) return 'Ngày sinh không được ở tương lai.';
       if (birthDate.getFullYear() < 1900) return 'Ngày sinh không hợp lý.';
     }
@@ -1989,11 +2096,41 @@ export default function AdminApp() {
     setCampaignSearch('');
     setSelectedCampaignUserIds([]);
     setCampaignError('');
+    setEditingCampaignId(null);
   }, []);
+
+  const closeCampaignModal = useCallback(() => {
+    setShowCreateNotification(false);
+    resetCampaignForm();
+  }, [resetCampaignForm]);
+
+  const openCreateNotification = useCallback(() => {
+    resetCampaignForm();
+    setShowCreateNotification(true);
+  }, [resetCampaignForm]);
+
+  const openEditCampaign = useCallback((campaign: NotificationCampaignRow) => {
+    const targetIds = dashboardData.notificationTargets
+      .filter((target) => target.campaign_id === campaign.campaign_id)
+      .map((target) => target.user_id);
+
+    setCampaignError('');
+    setEditingCampaignId(campaign.campaign_id);
+    setNotificationTitle(campaign.title || '');
+    setNotificationBody(campaign.body || '');
+    setCampaignAudience(campaign.target_audience === 'specific_users' ? 'specific_users' : 'all_users');
+    setCampaignDelivery('scheduled');
+    setCampaignSchedule(campaign.scheduled_at ? campaign.scheduled_at.slice(0, 16) : '');
+    setSelectedCampaignUserIds(targetIds);
+    setCampaignSearch('');
+    setShowCreateNotification(true);
+  }, [dashboardData.notificationTargets]);
 
   const handleCreateCampaign = useCallback(async () => {
     const title = notificationTitle.trim();
     const body = notificationBody.trim();
+    const isEditingCampaign = Boolean(editingCampaignId);
+    const effectiveDelivery: CampaignDelivery = isEditingCampaign ? 'scheduled' : campaignDelivery;
 
     if (!title || !body) {
       setCampaignError('Vui lòng nhập tiêu đề và nội dung thông báo.');
@@ -2015,8 +2152,8 @@ export default function AdminApp() {
       return;
     }
 
-    const scheduledAt = campaignDelivery === 'scheduled' ? new Date(campaignSchedule) : null;
-    if (campaignDelivery === 'scheduled' && (!campaignSchedule || !scheduledAt || Number.isNaN(scheduledAt.getTime()) || scheduledAt <= new Date())) {
+    const scheduledAt = effectiveDelivery === 'scheduled' ? new Date(campaignSchedule) : null;
+    if (effectiveDelivery === 'scheduled' && (!campaignSchedule || !scheduledAt || Number.isNaN(scheduledAt.getTime()) || scheduledAt <= new Date())) {
       setCampaignError('Thời gian lên lịch phải ở tương lai.');
       return;
     }
@@ -2026,6 +2163,70 @@ export default function AdminApp() {
     try {
       let pushWarning = '';
       const recipientIds = campaignRecipientRows.map((row) => row.id);
+
+      if (isEditingCampaign && editingCampaignId && scheduledAt) {
+        const { error: campaignUpdateError } = await supabase
+          .from('notification_campaigns')
+          .update({
+            title,
+            body,
+            target_audience: campaignAudience,
+            status: 'scheduled',
+            scheduled_at: scheduledAt.toISOString(),
+            sent_at: null,
+          })
+          .eq('campaign_id', editingCampaignId)
+          .eq('status', 'scheduled');
+
+        if (campaignUpdateError) throw campaignUpdateError;
+
+        const { error: notificationDeleteError } = await supabase
+          .from('notifications')
+          .delete()
+          .eq('campaign_id', editingCampaignId);
+
+        if (notificationDeleteError) throw notificationDeleteError;
+
+        const { error: targetDeleteError } = await supabase
+          .from('notification_campaign_targets')
+          .delete()
+          .eq('campaign_id', editingCampaignId);
+
+        if (targetDeleteError) throw targetDeleteError;
+
+        if (campaignAudience === 'specific_users' && recipientIds.length > 0) {
+          const { error: targetInsertError } = await supabase
+            .from('notification_campaign_targets')
+            .insert(recipientIds.map((userId) => ({
+              campaign_id: editingCampaignId,
+              user_id: userId,
+            })));
+
+          if (targetInsertError) throw targetInsertError;
+        }
+
+        if (recipientIds.length > 0) {
+          const { error: notificationInsertError } = await supabase
+            .from('notifications')
+            .insert(recipientIds.map((userId) => ({
+              user_id: userId,
+              type: 'admin_campaign',
+              title,
+              body,
+              data: { source: 'admin_campaign', campaign_id: editingCampaignId },
+              campaign_id: editingCampaignId,
+              created_at: scheduledAt.toISOString(),
+            })));
+
+          if (notificationInsertError) throw notificationInsertError;
+        }
+
+        setShowCreateNotification(false);
+        resetCampaignForm();
+        await loadDashboardData();
+        return;
+      }
+
       const { data: campaignId, error } = await withRequestLabel(
         'admin_create_notification_campaign',
         supabase.rpc('admin_create_notification_campaign', {
@@ -2039,7 +2240,7 @@ export default function AdminApp() {
 
       if (error) throw new Error(formatRequestError('admin_create_notification_campaign', error));
 
-      if (campaignDelivery === 'now') {
+      if (effectiveDelivery === 'now') {
         try {
           await sendExpoPushForCampaign(recipientIds, title, body);
         } catch (pushError: any) {
@@ -2071,12 +2272,12 @@ export default function AdminApp() {
         setCampaignError(`Thông báo in-app đã được tạo, nhưng push notification chưa gửi được: ${pushWarning}`);
       }
     } catch (error: any) {
-      console.error('Create notification campaign failed:', error);
-      setCampaignError(error?.message || 'Không thể tạo chiến dịch thông báo.');
+      console.error('Save notification campaign failed:', error);
+      setCampaignError(error?.message || 'Không thể lưu chiến dịch thông báo.');
     } finally {
       setIsSavingCampaign(false);
     }
-  }, [campaignAudience, campaignDelivery, campaignRecipientRows, campaignSchedule, loadDashboardData, notificationBody, notificationTitle, resetCampaignForm, selectedCampaignUserIds, sendExpoPushForCampaign]);
+  }, [campaignAudience, campaignDelivery, campaignRecipientRows, campaignSchedule, editingCampaignId, loadDashboardData, notificationBody, notificationTitle, resetCampaignForm, selectedCampaignUserIds, sendExpoPushForCampaign]);
 
   const handleCancelCampaign = useCallback(async (campaignId: string) => {
     setCampaignError('');
@@ -2182,6 +2383,26 @@ export default function AdminApp() {
     }
   };
 
+  const handleGoogleLogin = async () => {
+    setLoginError('');
+    setIsSigningIn(true);
+
+    try {
+      const redirectTo = Platform.OS === 'web' && typeof window !== 'undefined'
+        ? `${window.location.origin}/admin`
+        : undefined;
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: redirectTo ? { redirectTo } : undefined,
+      });
+
+      if (error) throw error;
+    } catch (error: any) {
+      setLoginError(error?.message || 'Đăng nhập Google Admin thất bại.');
+      setIsSigningIn(false);
+    }
+  };
+
   const handleLogout = async () => {
     setShowAdminMenu(false);
     await supabase.auth.signOut();
@@ -2243,6 +2464,10 @@ export default function AdminApp() {
 
           <TouchableOpacity style={[styles.loginButton, isSigningIn && styles.disabledButton]} onPress={handleLogin} disabled={isSigningIn}>
             {isSigningIn ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.loginButtonText}>Đăng nhập Admin</Text>}
+          </TouchableOpacity>
+
+          <TouchableOpacity style={[styles.loginButton, isSigningIn && styles.disabledButton]} onPress={handleGoogleLogin} disabled={isSigningIn}>
+            <Text style={styles.loginButtonText}>Đăng nhập Admin với Google</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -2312,7 +2537,8 @@ export default function AdminApp() {
               dashboardData={dashboardData}
               activeNotificationRows={activeNotificationRows}
               profileByUserId={profileByUserId}
-              setShowCreateNotification={setShowCreateNotification}
+              openCreateNotification={openCreateNotification}
+              openEditCampaign={openEditCampaign}
               setSelectedNotificationId={setSelectedNotificationId}
               handleCancelCampaign={handleCancelCampaign}
               handleDeleteCampaign={handleDeleteCampaign}
@@ -2402,6 +2628,9 @@ export default function AdminApp() {
               monthNames={monthNames}
               selectedMonth={selectedMonth}
               selectedYear={selectedYear}
+              dashboardTimeRange={dashboardTimeRange}
+              setDashboardTimeRange={setDashboardTimeRange}
+              dashboardTimeRangeOptions={DASHBOARD_TIME_RANGE_OPTIONS}
               adminName={adminName}
               dashboardError={dashboardError}
               isDashboardLoading={isDashboardLoading}
@@ -2419,12 +2648,12 @@ export default function AdminApp() {
           )}
         </ScrollView>
 
-        <Modal visible={showCreateNotification} transparent animationType="fade" onRequestClose={() => setShowCreateNotification(false)}>
+        <Modal visible={showCreateNotification} transparent animationType="fade" onRequestClose={closeCampaignModal}>
           <View style={styles.modalBackdrop}>
             <View style={styles.notificationModal}>
               <View style={styles.editUserHeader}>
-                <Text style={styles.editUserTitle}>Tạo thông báo mới</Text>
-                <TouchableOpacity onPress={() => setShowCreateNotification(false)}>
+                <Text style={styles.editUserTitle}>{editingCampaignId ? 'Chỉnh sửa thông báo đã lên lịch' : 'Tạo thông báo mới'}</Text>
+                <TouchableOpacity onPress={closeCampaignModal}>
                   <Ionicons name="close" size={22} color={ADMIN_COLORS.text} />
                 </TouchableOpacity>
               </View>
@@ -2515,22 +2744,26 @@ export default function AdminApp() {
                 ) : null}
 
                 <Text style={styles.inputLabel}>Lịch gửi</Text>
-                <View style={styles.frequencyRow}>
-                  <TouchableOpacity
-                    style={[styles.statusFilterButton, campaignDelivery === 'now' && styles.statusFilterButtonActive]}
-                    onPress={() => setCampaignDelivery('now')}
-                  >
-                    <Text style={[styles.statusFilterText, campaignDelivery === 'now' && styles.statusFilterTextActive]}>Gửi ngay</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.statusFilterButton, campaignDelivery === 'scheduled' && styles.statusFilterButtonActive]}
-                    onPress={() => setCampaignDelivery('scheduled')}
-                  >
-                    <Text style={[styles.statusFilterText, campaignDelivery === 'scheduled' && styles.statusFilterTextActive]}>Lên lịch</Text>
-                  </TouchableOpacity>
-                </View>
+                {editingCampaignId ? (
+                  <Text style={styles.detailHint}>Đang chỉnh sửa campaign đã lên lịch. Nếu cần gửi ngay, hãy tạo campaign mới.</Text>
+                ) : (
+                  <View style={styles.frequencyRow}>
+                    <TouchableOpacity
+                      style={[styles.statusFilterButton, campaignDelivery === 'now' && styles.statusFilterButtonActive]}
+                      onPress={() => setCampaignDelivery('now')}
+                    >
+                      <Text style={[styles.statusFilterText, campaignDelivery === 'now' && styles.statusFilterTextActive]}>Gửi ngay</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.statusFilterButton, campaignDelivery === 'scheduled' && styles.statusFilterButtonActive]}
+                      onPress={() => setCampaignDelivery('scheduled')}
+                    >
+                      <Text style={[styles.statusFilterText, campaignDelivery === 'scheduled' && styles.statusFilterTextActive]}>Lên lịch</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
 
-                {campaignDelivery === 'scheduled' ? (
+                {(editingCampaignId || campaignDelivery === 'scheduled') ? (
                   <>
                     <Text style={styles.inputLabel}>Thời gian lên lịch</Text>
                     <TextInput
@@ -2551,11 +2784,11 @@ export default function AdminApp() {
                 </View>
 
                 <View style={styles.editUserActions}>
-                  <TouchableOpacity style={styles.cancelButton} onPress={() => setShowCreateNotification(false)}>
+                  <TouchableOpacity style={styles.cancelButton} onPress={closeCampaignModal}>
                     <Text style={styles.cancelButtonText}>Hủy</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={[styles.saveAdminButton, isSavingCampaign && styles.disabledButton]} onPress={handleCreateCampaign} disabled={isSavingCampaign}>
-                    {isSavingCampaign ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveAdminButtonText}>{campaignDelivery === 'now' ? 'Gửi ngay' : 'Lên lịch'}</Text>}
+                    {isSavingCampaign ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveAdminButtonText}>{editingCampaignId ? 'Lưu thay đổi' : campaignDelivery === 'now' ? 'Gửi ngay' : 'Lên lịch'}</Text>}
                   </TouchableOpacity>
                 </View>
               </ScrollView>

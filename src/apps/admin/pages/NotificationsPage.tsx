@@ -13,7 +13,8 @@ type NotificationsPageProps = {
   dashboardData: any;
   activeNotificationRows: any[];
   profileByUserId: Map<string, any>;
-  setShowCreateNotification: (value: boolean) => void;
+  openCreateNotification: () => void;
+  openEditCampaign: (campaign: any) => void;
   setSelectedNotificationId: (value: string | null) => void;
   handleCancelCampaign: (campaignId: string) => void;
   handleDeleteCampaign: (campaignId: string) => void;
@@ -36,7 +37,8 @@ const NotificationsPage: React.FC<NotificationsPageProps> = ({
   dashboardData,
   activeNotificationRows,
   profileByUserId,
-  setShowCreateNotification,
+  openCreateNotification,
+  openEditCampaign,
   setSelectedNotificationId,
   handleCancelCampaign,
   handleDeleteCampaign,
@@ -57,7 +59,7 @@ const NotificationsPage: React.FC<NotificationsPageProps> = ({
         <Text style={styles.pageTitle}>Trung tâm thông báo</Text>
         <Text style={styles.pageSubtitle}>Quản lý chiến dịch thông báo do Admin tạo, gửi ngay hoặc lên lịch.</Text>
       </View>
-      <TouchableOpacity style={styles.exportButton} onPress={() => setShowCreateNotification(true)}>
+      <TouchableOpacity style={styles.exportButton} onPress={openCreateNotification}>
         <Ionicons name="add" size={16} color="#FFFFFF" />
         <Text style={styles.exportButtonText}>Tạo thông báo</Text>
       </TouchableOpacity>
@@ -138,9 +140,14 @@ const NotificationsPage: React.FC<NotificationsPageProps> = ({
             <Text style={[styles.userTableCell, styles.campaignColDate]}>{formatDateTime(getCampaignSentAt(campaign))}</Text>
             <View style={[styles.campaignColActions, styles.rowActions]}>
               {isCampaignScheduledForFuture(campaign) ? (
-                <TouchableOpacity style={[styles.tableActionButton, styles.deactivateButton]} onPress={() => handleCancelCampaign(campaign.campaign_id)}>
-                  <Text style={[styles.tableActionText, styles.deactivateText]}>Hủy lịch</Text>
-                </TouchableOpacity>
+                <>
+                  <TouchableOpacity style={styles.tableActionButton} onPress={() => openEditCampaign(campaign)}>
+                    <Text style={styles.tableActionText}>Sửa</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.tableActionButton, styles.deactivateButton]} onPress={() => handleCancelCampaign(campaign.campaign_id)}>
+                    <Text style={[styles.tableActionText, styles.deactivateText]}>Hủy lịch</Text>
+                  </TouchableOpacity>
+                </>
               ) : null}
               <TouchableOpacity style={[styles.tableActionButton, styles.deactivateButton]} onPress={() => handleDeleteCampaign(campaign.campaign_id)}>
                 <Text style={[styles.tableActionText, styles.deactivateText]}>Xóa campaign</Text>

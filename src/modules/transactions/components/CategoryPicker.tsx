@@ -19,12 +19,14 @@ interface CategoryPickerProps {
   categories: Category[];
   selectedCategory: Category | null;
   onCategorySelect: (category: Category) => void;
+  error?: string;
 }
 
 const CategoryPicker: React.FC<CategoryPickerProps> = ({
   categories,
   selectedCategory,
   onCategorySelect,
+  error,
 }) => {
   const [showModal, setShowModal] = useState(false);
 
@@ -37,7 +39,7 @@ const CategoryPicker: React.FC<CategoryPickerProps> = ({
     <View style={styles.container}>
       <Text style={styles.label}>DANH MỤC</Text>
       <TouchableOpacity
-        style={styles.pickerButton}
+        style={[styles.pickerButton, error ? styles.pickerButtonError : null]}
         onPress={() => setShowModal(true)}
         activeOpacity={0.7}
       >
@@ -62,6 +64,7 @@ const CategoryPicker: React.FC<CategoryPickerProps> = ({
         )}
         <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
       </TouchableOpacity>
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
       {/* Category Selection Modal */}
       <Modal
@@ -148,6 +151,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 14,
   },
+  pickerButtonError: {
+    borderColor: Colors.danger,
+    borderWidth: 1.5,
+  },
   selectedContent: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -171,6 +178,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.textMuted,
     flex: 1,
+  },
+  errorText: {
+    fontSize: 11,
+    color: Colors.danger,
+    marginTop: 4,
   },
   modalOverlay: {
     flex: 1,

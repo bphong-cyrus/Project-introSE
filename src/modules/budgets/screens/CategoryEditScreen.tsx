@@ -38,6 +38,7 @@ const PRESET_AMOUNTS = [
   { label: '2M', value: 2000000 },
   { label: '3M', value: 3000000 },
 ];
+const MAX_BUDGET_LIMIT = 2_000_000_000;
 
 const CategoryEditScreen: React.FC<CategoryEditScreenProps> = ({
   categoryBudget,
@@ -114,6 +115,11 @@ const CategoryEditScreen: React.FC<CategoryEditScreenProps> = ({
   const hasBudgetLimit = budgetLimit.length > 0;
 
   const handleSave = () => {
+    if (!hasBudgetLimit) {
+      setError('Vui lòng nhập hạn mức ngân sách');
+      return;
+    }
+
     const amount = enteredLimit;
 
     if (amount < 0) {
@@ -121,8 +127,8 @@ const CategoryEditScreen: React.FC<CategoryEditScreenProps> = ({
       return;
     }
 
-    if (amount > 100000000) {
-      setError('Hạn mức tối đa là 100.000.000 VND');
+    if (amount > MAX_BUDGET_LIMIT) {
+      setError('Hạn mức ngân sách không được vượt quá 2 tỷ đồng');
       return;
     }
 
@@ -280,9 +286,8 @@ const CategoryEditScreen: React.FC<CategoryEditScreenProps> = ({
       {/* Save Button */}
       <View style={styles.footer}>
         <TouchableOpacity
-          style={[styles.saveButton, !hasBudgetLimit && styles.saveButtonDisabled]}
+          style={styles.saveButton}
           onPress={handleSave}
-          disabled={!hasBudgetLimit}
         >
           <Ionicons name="checkmark" size={20} color="#FFFFFF" />
           <Text style={styles.saveButtonText}>Lưu hạn mức</Text>

@@ -29,6 +29,7 @@ interface AddIncomeCategorySheetProps {
     color: string;
     icon: string;
   }) => void;
+  validateName?: (name: string) => string | null;
   initialData?: {
     name: string;
     color: string;
@@ -71,6 +72,7 @@ const AddIncomeCategorySheet: React.FC<AddIncomeCategorySheetProps> = ({
   visible,
   onClose,
   onSave,
+  validateName,
   initialData,
   title = 'Thêm danh mục thu nhập',
 }) => {
@@ -97,6 +99,13 @@ const AddIncomeCategorySheet: React.FC<AddIncomeCategorySheetProps> = ({
       setError('Tên danh mục không được quá 50 ký tự');
       return;
     }
+
+    const nameValidationError = validateName?.(name.trim());
+    if (nameValidationError) {
+      setError(nameValidationError);
+      return;
+    }
+
     setError('');
     onSave({
       name: name.trim(),
@@ -227,7 +236,6 @@ const AddIncomeCategorySheet: React.FC<AddIncomeCategorySheetProps> = ({
           <TouchableOpacity
             style={[styles.saveButton, !name.trim() && styles.saveButtonDisabled]}
             onPress={handleSave}
-            disabled={!name.trim()}
           >
             <Text style={styles.saveButtonText}>Lưu danh mục</Text>
           </TouchableOpacity>

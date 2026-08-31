@@ -13,6 +13,9 @@ type DashboardPageProps = {
   monthNames: string[];
   selectedMonth: number;
   selectedYear: number;
+  dashboardTimeRange: string;
+  setDashboardTimeRange: (value: any) => void;
+  dashboardTimeRangeOptions: { value: string; label: string }[];
   adminName: string;
   dashboardError: string;
   isDashboardLoading: boolean;
@@ -34,6 +37,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   monthNames,
   selectedMonth,
   selectedYear,
+  dashboardTimeRange,
+  setDashboardTimeRange,
+  dashboardTimeRangeOptions,
   adminName,
   dashboardError,
   isDashboardLoading,
@@ -52,18 +58,31 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     <View style={styles.pageHeader}>
       <View>
         <Text style={styles.pageTitle}>Bảng điều khiển quản trị</Text>
-        <Text style={styles.pageSubtitle}>Tổng quan hệ thống • {monthNames[selectedMonth]} {selectedYear}</Text>
+        <Text style={styles.pageSubtitle}>Tổng quan hệ thống • {metrics.periodLabel || `${monthNames[selectedMonth]} ${selectedYear}`}</Text>
       </View>
       <View style={styles.headerActions}>
-        <View style={styles.monthPicker}>
-          <TouchableOpacity style={styles.monthButton} onPress={() => changeMonth(-1)}>
-            <Ionicons name="chevron-back" size={18} color={ADMIN_COLORS.primary} />
-          </TouchableOpacity>
-          <Text style={styles.monthLabel}>{monthNames[selectedMonth]} {selectedYear}</Text>
-          <TouchableOpacity style={styles.monthButton} onPress={() => changeMonth(1)}>
-            <Ionicons name="chevron-forward" size={18} color={ADMIN_COLORS.primary} />
-          </TouchableOpacity>
+        <View style={styles.statusFilterGroup}>
+          {dashboardTimeRangeOptions.map((option) => (
+            <TouchableOpacity
+              key={option.value}
+              style={[styles.statusFilterButton, dashboardTimeRange === option.value && styles.statusFilterButtonActive]}
+              onPress={() => setDashboardTimeRange(option.value)}
+            >
+              <Text style={[styles.statusFilterText, dashboardTimeRange === option.value && styles.statusFilterTextActive]}>{option.label}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
+        {dashboardTimeRange === 'month' ? (
+          <View style={styles.monthPicker}>
+            <TouchableOpacity style={styles.monthButton} onPress={() => changeMonth(-1)}>
+              <Ionicons name="chevron-back" size={18} color={ADMIN_COLORS.primary} />
+            </TouchableOpacity>
+            <Text style={styles.monthLabel}>{monthNames[selectedMonth]} {selectedYear}</Text>
+            <TouchableOpacity style={styles.monthButton} onPress={() => changeMonth(1)}>
+              <Ionicons name="chevron-forward" size={18} color={ADMIN_COLORS.primary} />
+            </TouchableOpacity>
+          </View>
+        ) : null}
         <TouchableOpacity style={styles.refreshButton} onPress={loadDashboardData}>
           <Ionicons name="refresh" size={16} color="#FFFFFF" />
           <Text style={styles.refreshText}>Làm mới</Text>
