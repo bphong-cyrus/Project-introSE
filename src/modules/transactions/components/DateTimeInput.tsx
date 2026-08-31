@@ -2,7 +2,7 @@
 // UC07: Text input for date and time with validation
 // Supports multiple date formats: DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,16 +15,111 @@ import { Colors } from '../../../shared/constants/colors';
 interface DateTimeInputProps {
   date: Date;
   onDateChange: (date: Date) => void;
+  onValidationChange?: (state: DateTimeValidationState) => void;
 }
 
-const DateTimeInput: React.FC<DateTimeInputProps> = ({ date, onDateChange }) => {
+export type DateTimeValidationState = {
+  isDateValid: boolean;
+  isTimeValid: boolean;
+  dateError?: string;
+  timeError?: string;
+};
+
+type ParsedDateParts = {
+  day: number;
+  month: number;
+  year: number;
+};
+
+type ParsedTimeParts = {
+  hours: number;
+  minutes: number;
+};
+
+const parseDateParts = (input: string): { parts?: ParsedDateParts; error?: string } => {
+  const trimmed = input.trim();
+  if (!trimmed) return { error: 'Vui lòng nhập ngày' };
+
+  const parts = trimmed.split(/[\/\-\.]/);
+  if (parts.length < 3) return { error: 'Ngày không hợp lệ' };
+
+  let day = parseInt(parts[0], 10);
+  let month = parseInt(parts[1], 10);
+  let year = parseInt(parts[2], 10);
+
+  if (year < 100) {
+    year = year > 50 ? 1900 + year : 2000 + year;
+  }
+
+  if (isNaN(day) || isNaN(month) || isNaN(year)) {
+    return { error: 'Ngày không hợp lệ' };
+  }
+
+  if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1900 || year > 2100) {
+    return { error: 'Ngày không hợp lệ' };
+  }
+
+  const daysInMonth = new Date(year, month, 0).getDate();
+  if (day > daysInMonth) {
+    return { error: `Tháng ${month} chỉ có ${daysInMonth} ngày` };
+  }
+
+  return { parts: { day, month, year } };
+};
+
+const parseTimeParts = (input: string): { parts?: ParsedTimeParts; error?: string } => {
+  const trimmed = input.trim();
+  if (!trimmed) return { error: 'Vui lòng nhập giờ' };
+
+  const cleaned = trimmed.replace(/[^\d:]/g, '');
+  const parts = cleaned.split(':');
+  if (parts.length < 2) return { error: 'Giờ không hợp lệ' };
+
+  const hours = parseInt(parts[0], 10);
+  const minutes = parseInt(parts[1], 10);
+
+  if (isNaN(hours) || isNaN(minutes)) {
+    return { error: 'Giờ không hợp lệ' };
+  }
+
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return { error: 'Giờ không hợp lệ' };
+  }
+
+  return { parts: { hours, minutes } };
+};
+
+const DateTimeInput: React.FC<DateTimeInputProps> = ({ date, onDateChange, onValidationChange }) => {
   const [dateString, setDateString] = useState('');
   const [timeString, setTimeString] = useState('');
   const [dateError, setDateError] = useState('');
   const [timeError, setTimeError] = useState('');
+  const didInitializeRef = useRef(false);
+  const lastEmittedTimestampRef = useRef<number | null>(null);
+  const dateTimestamp = date.getTime();
+
+  const notifyValidation = useCallback((nextDateError: string, nextTimeError: string) => {
+    onValidationChange?.({
+      isDateValid: !nextDateError,
+      isTimeValid: !nextTimeError,
+      dateError: nextDateError || undefined,
+      timeError: nextTimeError || undefined,
+    });
+  }, [onValidationChange]);
+
+  const setValidationErrors = useCallback((nextDateError: string, nextTimeError: string) => {
+    setDateError(nextDateError);
+    setTimeError(nextTimeError);
+    notifyValidation(nextDateError, nextTimeError);
+  }, [notifyValidation]);
 
   // Initialize with current date
   useEffect(() => {
+    if (didInitializeRef.current && lastEmittedTimestampRef.current === dateTimestamp) {
+      return;
+    }
+
+    didInitializeRef.current = true;
     const d = new Date(date);
     const day = d.getDate().toString().padStart(2, '0');
     const month = (d.getMonth() + 1).toString().padStart(2, '0');
@@ -34,112 +129,66 @@ const DateTimeInput: React.FC<DateTimeInputProps> = ({ date, onDateChange }) => 
     const hours = d.getHours().toString().padStart(2, '0');
     const minutes = d.getMinutes().toString().padStart(2, '0');
     setTimeString(`${hours}:${minutes}`);
-  }, [date]);
+    setDateError('');
+    setTimeError('');
+    notifyValidation('', '');
+  }, [dateTimestamp]);
 
   // Parse and validate date
   const validateAndUpdateDate = useCallback((input: string) => {
-    const trimmed = input.trim();
-    if (!trimmed) {
-      setDateError('Vui lòng nhập ngày');
+    const parsedDate = parseDateParts(input);
+    if (parsedDate.error || !parsedDate.parts) {
+      setValidationErrors(parsedDate.error || 'Ngày không hợp lệ', timeError);
       return false;
     }
 
-    // Try to parse the date
-    const parts = trimmed.split(/[\/\-\.]/);
-    if (parts.length < 3) {
-      // Not enough parts yet
+    const parsedTime = parseTimeParts(timeString);
+    if (parsedTime.error || !parsedTime.parts) {
+      setValidationErrors('', parsedTime.error || 'Giờ không hợp lệ');
       return false;
     }
 
-    let day: number, month: number, year: number;
-
-    // Try DD/MM/YYYY format first
-    day = parseInt(parts[0], 10);
-    month = parseInt(parts[1], 10);
-    year = parseInt(parts[2], 10);
-
-    // Handle 2-digit year
-    if (year < 100) {
-      year = year > 50 ? 1900 + year : 2000 + year;
-    }
-
-    // Validate
-    if (isNaN(day) || isNaN(month) || isNaN(year)) {
-      setDateError('Ngày không hợp lệ');
-      return false;
-    }
-
-    if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1900 || year > 2100) {
-      setDateError('Ngày không hợp lệ');
-      return false;
-    }
-
-    // Check actual days in month
-    const daysInMonth = new Date(year, month, 0).getDate();
-    if (day > daysInMonth) {
-      setDateError(`Tháng ${month} chỉ có ${daysInMonth} ngày`);
-      return false;
-    }
-
-    // Update date while preserving the existing time. Set year/month/day in
-    // one call so changing from a 31-day month to a shorter month cannot roll
-    // over through an invalid intermediate date.
     const newDate = new Date(date);
-    newDate.setFullYear(year, month - 1, day);
+    newDate.setFullYear(parsedDate.parts.year, parsedDate.parts.month - 1, parsedDate.parts.day);
+    newDate.setHours(parsedTime.parts.hours, parsedTime.parts.minutes, 0, 0);
+    lastEmittedTimestampRef.current = newDate.getTime();
     onDateChange(newDate);
-    setDateError('');
+    setValidationErrors('', '');
     return true;
-  }, [date, onDateChange]);
+  }, [date, onDateChange, setValidationErrors, timeError, timeString]);
 
   // Parse and validate time
   const validateAndUpdateTime = useCallback((input: string) => {
-    const trimmed = input.trim();
-    if (!trimmed) {
-      setTimeError('Vui lòng nhập giờ');
+    const parsedTime = parseTimeParts(input);
+    if (parsedTime.error || !parsedTime.parts) {
+      setValidationErrors(dateError, parsedTime.error || 'Giờ không hợp lệ');
       return false;
     }
 
-    // Remove non-digit except :
-    const cleaned = trimmed.replace(/[^\d:]/g, '');
-    const parts = cleaned.split(':');
-
-    if (parts.length < 2) {
-      // Not enough parts yet
+    const parsedDate = parseDateParts(dateString);
+    if (parsedDate.error || !parsedDate.parts) {
+      setValidationErrors(parsedDate.error || 'Ngày không hợp lệ', '');
       return false;
     }
 
-    let hours = parseInt(parts[0], 10);
-    let minutes = parseInt(parts[1], 10);
-
-    if (isNaN(hours) || isNaN(minutes)) {
-      setTimeError('Giờ không hợp lệ');
-      return false;
-    }
-
-    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
-      setTimeError('Giờ không hợp lệ');
-      return false;
-    }
-
-    // Update time
     const newDate = new Date(date);
-    newDate.setHours(hours);
-    newDate.setMinutes(minutes);
-    newDate.setSeconds(0, 0);
+    newDate.setFullYear(parsedDate.parts.year, parsedDate.parts.month - 1, parsedDate.parts.day);
+    newDate.setHours(parsedTime.parts.hours, parsedTime.parts.minutes, 0, 0);
+    lastEmittedTimestampRef.current = newDate.getTime();
     onDateChange(newDate);
-    setTimeError('');
+    setValidationErrors('', '');
     return true;
-  }, [date, onDateChange]);
+  }, [date, dateError, dateString, onDateChange, setValidationErrors]);
 
   const handleDateChange = (text: string) => {
     setDateString(text);
-    setDateError('');
-
-    // Try to validate if format is complete
-    const parts = text.split(/[\/\-\.]/);
-    if (parts.length === 3 && parts[0].length >= 2 && parts[1].length >= 2 && parts[2].length >= 4) {
-      validateAndUpdateDate(text);
+    const trimmed = text.trim();
+    if (!trimmed) {
+      setValidationErrors('Vui lòng nhập ngày', timeError);
+      return;
     }
+
+    validateAndUpdateDate(text);
   };
 
   const handleDateBlur = () => {
@@ -148,13 +197,13 @@ const DateTimeInput: React.FC<DateTimeInputProps> = ({ date, onDateChange }) => 
 
   const handleTimeChange = (text: string) => {
     setTimeString(text);
-    setTimeError('');
-
-    // Try to validate if format is complete
-    const parts = text.split(':');
-    if (parts.length === 2 && parts[0].length >= 2 && parts[1].length >= 2) {
-      validateAndUpdateTime(text);
+    const trimmed = text.trim();
+    if (!trimmed) {
+      setValidationErrors(dateError, 'Vui lòng nhập giờ');
+      return;
     }
+
+    validateAndUpdateTime(text);
   };
 
   const handleTimeBlur = () => {

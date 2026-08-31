@@ -29,6 +29,13 @@ type EditableProfile = {
   income: string;
 };
 
+type EditableProfileField = keyof EditableProfile;
+
+type ProfileValidationError = {
+  field: EditableProfileField;
+  message: string;
+};
+
 type UserFeedbackForm = {
   category: string;
   subject: string;
@@ -78,6 +85,27 @@ const SUPPORTED_AVATAR_CONTENT_TYPES = new Set([
   'image/heic',
   'image/heif',
 ]);
+
+const parseDateOfBirthInput = (value: string): Date | null => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+
+  const year = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  const day = parseInt(match[3], 10);
+  const date = new Date(year, month - 1, day);
+
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
 
 const getDefaultFeedbackPriority = (category: string, subject: string, content: string): FeedbackPriority => {
   const normalizedText = `${subject} ${content}`.trim().toLowerCase();
@@ -229,6 +257,8 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigateToChangePasswor
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [feedbackError, setFeedbackError] = useState('');
   const [feedbackToast, setFeedbackToast] = useState('');
+  const [profileError, setProfileError] = useState('');
+  const [profileFieldErrors, setProfileFieldErrors] = useState<Partial<Record<EditableProfileField, string>>>({});
   const [feedbackAttachment, setFeedbackAttachment] = useState<FeedbackAttachment | null>(null);
   const [feedbackForm, setFeedbackForm] = useState<UserFeedbackForm>({
     category: USER_FEEDBACK_CATEGORIES[0].code,
@@ -261,13 +291,49 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigateToChangePasswor
     return new Intl.NumberFormat('vi-VN').format(value) + ' VND';
   };
 
-  const validateProfile = (): string | null => {
-    if (!form.fullName.trim()) return 'Vui lòng nhập họ tên.';
-    if (form.dateOfBirth && !/^\d{4}-\d{2}-\d{2}$/.test(form.dateOfBirth)) {
-      return 'Ngày sinh phải có định dạng YYYY-MM-DD.';
+  const clearProfileFieldError = useCallback((field: EditableProfileField) => {
+    setProfileError('');
+    setProfileFieldErrors((prev) => ({ ...prev, [field]: undefined }));
+  }, []);
+
+  const openEditProfileModal = useCallback(() => {
+    setProfileError('');
+    setProfileFieldErrors({});
+    setShowEditModal(true);
+  }, []);
+
+  const closeEditProfileModal = useCallback(() => {
+    setProfileError('');
+    setProfileFieldErrors({});
+    setShowEditModal(false);
+  }, []);
+
+  const validateProfile = (): ProfileValidationError | null => {
+    if (!form.fullName.trim()) {
+      return { field: 'fullName', message: 'Vui lòng nhập họ tên.' };
     }
-    if (form.income && Number.isNaN(Number(form.income.replace(/[^\d]/g, '')))) {
-      return 'Thu nhập hàng tháng không hợp lệ.';
+
+    const dateOfBirth = form.dateOfBirth.trim();
+    if (dateOfBirth) {
+      const parsedDateOfBirth = parseDateOfBirthInput(dateOfBirth);
+      if (!parsedDateOfBirth) {
+        return { field: 'dateOfBirth', message: 'Ngày sinh không hợp lệ. Vui lòng dùng định dạng YYYY-MM-DD.' };
+      }
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (parsedDateOfBirth > today) {
+        return { field: 'dateOfBirth', message: 'Ngày sinh không được ở tương lai.' };
+      }
+
+      if (parsedDateOfBirth.getFullYear() < 1900) {
+        return { field: 'dateOfBirth', message: 'Ngày sinh không hợp lý.' };
+      }
+    }
+    const incomeRaw = form.income.trim();
+    const incomeDigits = incomeRaw.replace(/[^\d]/g, '');
+    if (incomeRaw && !incomeDigits) {
+      return { field: 'income', message: 'Thu nhập hàng tháng không hợp lệ.' };
     }
     return null;
   };
@@ -275,10 +341,14 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigateToChangePasswor
   const handleSaveProfile = async () => {
     const validationError = validateProfile();
     if (validationError) {
-      Alert.alert('Thông tin chưa hợp lệ', validationError);
+      setProfileError(validationError.message);
+      setProfileFieldErrors({ [validationError.field]: validationError.message });
+      Alert.alert('Thông tin chưa hợp lệ', validationError.message);
       return;
     }
 
+    setProfileError('');
+    setProfileFieldErrors({});
     const incomeValue = form.income.replace(/[^\d]/g, '');
     const result = await updateProfile({
       fullName: form.fullName.trim(),
@@ -288,7 +358,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigateToChangePasswor
     });
 
     if (result.success) {
-      setShowEditModal(false);
+      closeEditProfileModal();
       Alert.alert('Thành công', 'Thông tin cá nhân đã được cập nhật.');
     } else {
       Alert.alert('Lỗi', result.message);
@@ -656,7 +726,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigateToChangePasswor
 
         <Text style={styles.sectionLabel}>Bảo mật tài khoản</Text>
         <View style={styles.menuGroup}>
-          <TouchableOpacity style={styles.menuItem} onPress={() => setShowEditModal(true)}>
+          <TouchableOpacity style={styles.menuItem} onPress={openEditProfileModal}>
             <View style={styles.menuLeft}>
               <Ionicons name="person" size={18} color={Colors.primary} />
               <Text style={styles.menuText}>Cập nhật thông tin cá nhân</Text>
@@ -866,30 +936,70 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigateToChangePasswor
         </View>
       </Modal>
 
-      <Modal visible={showEditModal} transparent animationType="slide" onRequestClose={() => setShowEditModal(false)}>
+      <Modal visible={showEditModal} transparent animationType="slide" onRequestClose={closeEditProfileModal}>
         <View style={styles.editBackdrop}>
           <View style={styles.editModal}>
             <View style={styles.editHeader}>
               <Text style={styles.editTitle}>Chỉnh sửa thông tin</Text>
-              <TouchableOpacity onPress={() => setShowEditModal(false)}>
+              <TouchableOpacity onPress={closeEditProfileModal}>
                 <Ionicons name="close" size={24} color={Colors.textPrimary} />
               </TouchableOpacity>
             </View>
 
+            {profileError ? (
+              <View style={styles.feedbackErrorBox}>
+                <Ionicons name="warning" size={18} color={Colors.danger} />
+                <Text style={styles.feedbackErrorText}>{profileError}</Text>
+              </View>
+            ) : null}
+
             <Text style={styles.inputLabel}>Họ tên</Text>
-            <TextInput style={styles.input} value={form.fullName} onChangeText={(fullName) => setForm(prev => ({ ...prev, fullName }))} />
+            <TextInput
+              style={[styles.input, profileFieldErrors.fullName && styles.inputError]}
+              value={form.fullName}
+              onChangeText={(fullName) => {
+                setForm(prev => ({ ...prev, fullName }));
+                clearProfileFieldError('fullName');
+              }}
+            />
+            {profileFieldErrors.fullName ? <Text style={styles.fieldErrorText}>{profileFieldErrors.fullName}</Text> : null}
 
             <Text style={styles.inputLabel}>Email</Text>
             <TextInput style={[styles.input, styles.inputDisabled]} value={user?.email || ''} editable={false} />
 
             <Text style={styles.inputLabel}>Ngày sinh (YYYY-MM-DD)</Text>
-            <TextInput style={styles.input} value={form.dateOfBirth} onChangeText={(dateOfBirth) => setForm(prev => ({ ...prev, dateOfBirth }))} placeholder="2003-01-31" />
+            <TextInput
+              style={[styles.input, profileFieldErrors.dateOfBirth && styles.inputError]}
+              value={form.dateOfBirth}
+              onChangeText={(dateOfBirth) => {
+                setForm(prev => ({ ...prev, dateOfBirth }));
+                clearProfileFieldError('dateOfBirth');
+              }}
+              placeholder="2003-01-31"
+            />
+            {profileFieldErrors.dateOfBirth ? <Text style={styles.fieldErrorText}>{profileFieldErrors.dateOfBirth}</Text> : null}
 
             <Text style={styles.inputLabel}>Nghề nghiệp</Text>
-            <TextInput style={styles.input} value={form.job} onChangeText={(job) => setForm(prev => ({ ...prev, job }))} />
+            <TextInput
+              style={styles.input}
+              value={form.job}
+              onChangeText={(job) => {
+                setForm(prev => ({ ...prev, job }));
+                clearProfileFieldError('job');
+              }}
+            />
 
             <Text style={styles.inputLabel}>Thu nhập hàng tháng</Text>
-            <TextInput style={styles.input} value={form.income} onChangeText={(income) => setForm(prev => ({ ...prev, income }))} keyboardType="numeric" />
+            <TextInput
+              style={[styles.input, profileFieldErrors.income && styles.inputError]}
+              value={form.income}
+              onChangeText={(income) => {
+                setForm(prev => ({ ...prev, income }));
+                clearProfileFieldError('income');
+              }}
+              keyboardType="numeric"
+            />
+            {profileFieldErrors.income ? <Text style={styles.fieldErrorText}>{profileFieldErrors.income}</Text> : null}
 
             <TouchableOpacity style={[styles.saveButton, isLoading && styles.logoutButtonDisabled]} onPress={handleSaveProfile} disabled={isLoading}>
               {isLoading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveButtonText}>Lưu</Text>}
@@ -1280,6 +1390,17 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     color: Colors.textPrimary,
     backgroundColor: '#FFFFFF',
+  },
+  inputError: {
+    borderColor: Colors.danger,
+    borderWidth: 1.5,
+    marginBottom: 4,
+  },
+  fieldErrorText: {
+    color: Colors.danger,
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 12,
   },
   feedbackContentInput: {
     minHeight: 120,

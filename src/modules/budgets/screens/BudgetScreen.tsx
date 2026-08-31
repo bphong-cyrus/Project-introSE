@@ -42,6 +42,7 @@ const VIETNAMESE_MONTHS = [
 const MONTHS_SHORT = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12'];
 const INCOME_GREEN = '#2ECC71';
 const EXPENSE_RED = '#E74C3C';
+const DUPLICATE_CATEGORY_NAME_ERROR = 'Tên danh mục đã tồn tại. Vui lòng chọn tên khác.';
 
 const formatCurrency = (amount: number): string => {
   return `${new Intl.NumberFormat('vi-VN').format(Math.round(amount))} VND`;
@@ -51,6 +52,15 @@ const parseCurrencyInput = (text: string): number => {
   const digits = text.replace(/[^\d]/g, '');
   return parseInt(digits, 10) || 0;
 };
+
+const normalizeCategoryName = (name: string): string => (
+  name
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+);
 
 const buildBudgetLimitError = (income: number) => (
   `Tổng hạn mức ngân sách các danh mục không được vượt quá Tổng thu nhập của tháng (${formatCurrency(income)}). Vui lòng điều chỉnh lại!`
@@ -288,8 +298,30 @@ const BudgetScreen: React.FC<BudgetScreenProps> = ({ onTransactionPress }) => {
     }
   }, [refreshCategories, refreshMonthlyIncome, refreshTransactions, syncBudgetAllocationsFromDatabase]);
 
+  const isDuplicateCategoryName = useCallback((name: string) => {
+    const normalizedName = normalizeCategoryName(name);
+    if (!normalizedName) return false;
+
+    return [...expenseCats, ...incomeCats].some(
+      (category) => normalizeCategoryName(category.name) === normalizedName
+    );
+  }, [expenseCats, incomeCats]);
+
+  const getCategoryNameValidationError = useCallback((name: string) => (
+    isDuplicateCategoryName(name) ? DUPLICATE_CATEGORY_NAME_ERROR : null
+  ), [isDuplicateCategoryName]);
+
   // Add expense category
   const handleAddExpenseCategory = async (categoryData: { name: string; color: string; icon: string }) => {
+    const duplicateError = getCategoryNameValidationError(categoryData.name);
+    if (duplicateError) {
+      Alert.alert(
+        'Tên danh mục đã tồn tại',
+        duplicateError
+      );
+      return;
+    }
+
     const newCategory = await addCategory({
       name: categoryData.name,
       icon: categoryData.icon,
@@ -312,6 +344,15 @@ const BudgetScreen: React.FC<BudgetScreenProps> = ({ onTransactionPress }) => {
 
   // Add income category
   const handleAddIncomeCategory = async (categoryData: { name: string; color: string; icon: string }) => {
+    const duplicateError = getCategoryNameValidationError(categoryData.name);
+    if (duplicateError) {
+      Alert.alert(
+        'Tên danh mục đã tồn tại',
+        duplicateError
+      );
+      return;
+    }
+
     const newCategory = await addCategory({
       name: categoryData.name,
       icon: categoryData.icon,
@@ -787,6 +828,7 @@ const BudgetScreen: React.FC<BudgetScreenProps> = ({ onTransactionPress }) => {
         visible={showAddExpenseSheet}
         onClose={() => setShowAddExpenseSheet(false)}
         onSave={handleAddExpenseCategory}
+        validateName={getCategoryNameValidationError}
       />
 
       {/* Add Income Category Sheet */}
@@ -794,6 +836,7 @@ const BudgetScreen: React.FC<BudgetScreenProps> = ({ onTransactionPress }) => {
         visible={showAddIncomeSheet}
         onClose={() => setShowAddIncomeSheet(false)}
         onSave={handleAddIncomeCategory}
+        validateName={getCategoryNameValidationError}
       />
 
       {/* Delete Category Dialog with Transfer */}
