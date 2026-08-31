@@ -5,8 +5,26 @@
 // In particular, the OCR amount is signed: negative = expense and positive =
 // income. The persisted `amount` remains absolute because the transactions
 // table stores a positive amount together with its `type` column.
+//
+// Performance tracking: measures timing for each processing step and logs
+// performance metrics for monitoring and optimization.
 
 const { analyzeReceipt, GeminiApiError, GeminiConfigError } = require('./geminiClient');
+
+// Performance tracking helper
+function createTimer() {
+  const start = process.hrtime.bigint();
+  return {
+    elapsed: () => {
+      const end = process.hrtime.bigint();
+      return Number(end - start) / 1_000_000; // ms
+    },
+    checkpoint: (name) => {
+      const ms = process.hrtime.bigint();
+      return { name, ms: Number(ms - start) / 1_000_000 };
+    },
+  };
+}
 
 function buildSystemPrompt(categories) {
   const expenseCats = categories
@@ -69,6 +87,13 @@ Requirements:
 const USER_PROMPT =
   'Read the image with OCR and return the signed financial transaction JSON described in the system instructions.';
 
+const LOW_CONFIDENCE_RETRY_THRESHOLD = Number(process.env.AI_LOW_CONFIDENCE_RETRY_THRESHOLD) || 80;
+const MANUAL_REVIEW_THRESHOLD = 80;
+const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.5-flash';
+const RETRY_TOTAL_BUDGET_MS = Number(process.env.AI_RETRY_TOTAL_BUDGET_MS) || 8_000;
+const MIN_FALLBACK_BUDGET_MS = 1_500;
+const CONSENSUS_CONFIDENCE_FLOOR = 85;
+
 // Fallback list used when the mobile request cannot provide the categories
 // loaded from Supabase. IDs and names mirror the mobile defaults.
 const CATEGORIES = [
@@ -83,17 +108,28 @@ const CATEGORIES = [
 ];
 
 async function parseReceipt({ mediaType, buffer, availableCategories }) {
+  const timer = createTimer();
+  const imageSizeKB = Math.round(buffer.length / 1024);
+
   const suppliedCategories = normaliseCategories(availableCategories);
   const cats = suppliedCategories.length > 0 ? suppliedCategories : CATEGORIES;
 
-  const { rawText, model, usage } = await analyzeReceipt({
+  // Log incoming request
+  console.log(`[parseReceipt] Processing image (${imageSizeKB}KB), ${cats.length} categories`);
+
+  const system = buildSystemPrompt(cats);
+  const primaryStartedAt = timer.elapsed();
+  const primary = await analyzeReceipt({
     mediaType,
     buffer,
-    system: buildSystemPrompt(cats),
+    system,
     userPrompt: USER_PROMPT,
   });
+  const primaryMs = timer.elapsed() - primaryStartedAt;
+  console.log(`[parseReceipt] Primary ${primary.model} completed in ${primaryMs.toFixed(0)}ms (${imageSizeKB}KB image)`);
 
-  const json = safeParseJson(rawText);
+  const json = safeParseJson(primary.rawText);
+
   if (!json) {
     const err = new Error(
       'Gemini trả về kết quả không đúng định dạng JSON. Vui lòng thử lại với ảnh rõ hơn.',
@@ -102,11 +138,103 @@ async function parseReceipt({ mediaType, buffer, availableCategories }) {
     throw err;
   }
 
+  const primaryData = mapToExtractedReceiptData(json, cats);
+  let mappedData = primaryData;
+  let selectedModel = primary.model;
+  let selectedUsage = primary.usage;
+  let rawText = primary.rawText;
+  let fallbackMs = 0;
+  let fallbackModel = null;
+  let retryAttempted = false;
+  let retrySucceeded = false;
+  let consensus = null;
+
+  const retryEnabled = process.env.AI_LOW_CONFIDENCE_RETRY !== 'false';
+  const shouldRetry = retryEnabled && (
+    primaryData.overallConfidence < LOW_CONFIDENCE_RETRY_THRESHOLD ||
+    primaryData.needsManualReview
+  );
+
+  if (shouldRetry) {
+    const remainingBudgetMs = Math.floor(RETRY_TOTAL_BUDGET_MS - timer.elapsed());
+    if (remainingBudgetMs >= MIN_FALLBACK_BUDGET_MS) {
+      retryAttempted = true;
+      const fallbackStartedAt = timer.elapsed();
+      try {
+        const fallback = await analyzeReceipt({
+          mediaType,
+          buffer,
+          system,
+          userPrompt: USER_PROMPT,
+          model: FALLBACK_MODEL,
+          requestTimeoutMs: remainingBudgetMs,
+        });
+        fallbackMs = timer.elapsed() - fallbackStartedAt;
+        fallbackModel = fallback.model;
+
+        const fallbackJson = safeParseJson(fallback.rawText);
+        if (fallbackJson) {
+          const fallbackData = mapToExtractedReceiptData(fallbackJson, cats);
+          const reconciled = reconcileReceiptResults(primaryData, fallbackData);
+          mappedData = reconciled.data;
+          consensus = reconciled.consensus;
+          selectedModel = `${primary.model} + ${fallback.model}`;
+          selectedUsage = { primary: primary.usage, fallback: fallback.usage };
+          rawText = [
+            `[primary:${primary.model}]`,
+            primary.rawText,
+            `[fallback:${fallback.model}]`,
+            fallback.rawText,
+          ].join('\n');
+          retrySucceeded = true;
+          console.log(
+            `[parseReceipt] Fallback ${fallback.model} completed in ${fallbackMs.toFixed(0)}ms; ` +
+            `agreement=${consensus.agreedFields.length}/5`,
+          );
+        }
+      } catch (error) {
+        fallbackMs = timer.elapsed() - fallbackStartedAt;
+        console.warn(`[parseReceipt] Fallback skipped after error: ${error.message}`);
+      }
+    } else {
+      console.warn(`[parseReceipt] Not enough retry budget (${remainingBudgetMs}ms); returning primary result`);
+    }
+  }
+
+  if (mappedData.amount <= 0 && !mappedData.storeName) {
+    const err = new Error(
+      'Không phát hiện hóa đơn hoặc giao dịch hợp lệ. Vui lòng chọn ảnh rõ tổng tiền và tên cửa hàng.',
+    );
+    err.status = 422;
+    throw err;
+  }
+
+  const totalTime = timer.elapsed();
+  console.log(`[parseReceipt] Total processing time: ${totalTime.toFixed(0)}ms for ${imageSizeKB}KB image`);
+
   return {
-    model,
-    usage,
+    model: selectedModel,
+    usage: selectedUsage,
     rawText,
-    data: mapToExtractedReceiptData(json, cats),
+    data: mappedData,
+    retry: {
+      attempted: retryAttempted,
+      succeeded: retrySucceeded,
+      threshold: LOW_CONFIDENCE_RETRY_THRESHOLD,
+      primaryModel: primary.model,
+      fallbackModel,
+      consensus,
+    },
+    // Include performance metadata for monitoring
+    _perf: {
+      total_ms: totalTime,
+      gemini_ms: primaryMs + fallbackMs,
+      primary_ms: primaryMs,
+      fallback_ms: fallbackMs,
+      retry_attempted: retryAttempted,
+      retry_succeeded: retrySucceeded,
+      image_size_kb: imageSizeKB,
+    },
   };
 }
 
@@ -135,11 +263,7 @@ function safeParseJson(text) {
 function clampConfidence(value, fallback = 60) {
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
-  const rounded = Math.max(0, Math.min(100, Math.round(number)));
-  // Nếu AI trả về confidence quá thấp (<20) nhưng field hợp lệ,
-  // có thể AI không hiểu yêu cầu - boost lên minimum 60
-  if (rounded < 20 && fallback >= 60) return 60;
-  return rounded;
+  return Math.max(0, Math.min(100, Math.round(number)));
 }
 
 function confidenceFor(value, isValid) {
@@ -200,6 +324,71 @@ function foldText(value) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/đ/g, 'd');
+}
+
+function reconcileReceiptResults(primary, fallback) {
+  const sameMerchant = Boolean(primary.storeName && fallback.storeName) &&
+    (() => {
+      const first = foldText(primary.storeName);
+      const second = foldText(fallback.storeName);
+      return first === second || first.includes(second) || second.includes(first);
+    })();
+  const primaryDate = new Date(primary.date).getTime();
+  const fallbackDate = new Date(fallback.date).getTime();
+  const sameDate = Number.isFinite(primaryDate) &&
+    Number.isFinite(fallbackDate) &&
+    Math.abs(primaryDate - fallbackDate) <= 60_000;
+
+  const agreement = {
+    amount: primary.amount > 0 && primary.amount === fallback.amount,
+    storeName: sameMerchant,
+    date: sameDate,
+    category: Boolean(primary.categoryId) && primary.categoryId === fallback.categoryId,
+    type: Boolean(primary.signedAmount) &&
+      Boolean(fallback.signedAmount) &&
+      primary.type === fallback.type,
+  };
+
+  const base = fallback.overallConfidence >= primary.overallConfidence
+    ? fallback
+    : primary;
+  const confidence = {};
+  Object.entries(agreement).forEach(([field, agreed]) => {
+    const primaryScore = Number(primary.confidence[field]) || 0;
+    const fallbackScore = Number(fallback.confidence[field]) || 0;
+    confidence[field] = agreed
+      ? Math.min(98, Math.max(
+          CONSENSUS_CONFIDENCE_FLOOR,
+          Math.max(primaryScore, fallbackScore) + 5,
+        ))
+      : Math.min(60, Number(base.confidence[field]) || 0);
+  });
+
+  const agreedFields = Object.keys(agreement).filter((field) => agreement[field]);
+  const disagreedFields = Object.keys(agreement).filter((field) => !agreement[field]);
+  const missingFields = Array.from(new Set([
+    ...(base.missingFields || []),
+    ...disagreedFields,
+  ]));
+  const overallConfidence = Math.min(...Object.values(confidence));
+  const needsManualReview = missingFields.length > 0 ||
+    overallConfidence < MANUAL_REVIEW_THRESHOLD;
+
+  return {
+    data: {
+      ...base,
+      confidence: { ...confidence, overall: overallConfidence },
+      overallConfidence,
+      missingFields,
+      needsManualReview,
+      autoApproved: !needsManualReview,
+    },
+    consensus: {
+      allFieldsAgree: disagreedFields.length === 0,
+      agreedFields,
+      disagreedFields,
+    },
+  };
 }
 
 function mapToExtractedReceiptData(parsed, categories) {
@@ -278,7 +467,7 @@ function mapToExtractedReceiptData(parsed, categories) {
   // The minimum field confidence prevents one missing required field from
   // being hidden by a high average from the other fields.
   const overallConfidence = Math.min(...Object.values(fieldConfidence));
-  const needsManualReview = missingFields.length > 0 || overallConfidence < 80;
+  const needsManualReview = missingFields.length > 0 || overallConfidence < MANUAL_REVIEW_THRESHOLD;
   const note = parsed && typeof parsed.notes === 'string' ? parsed.notes.slice(0, 200) : '';
 
   return {
@@ -311,6 +500,7 @@ module.exports = {
   parseReceipt,
   CATEGORIES,
   mapToExtractedReceiptData,
+  reconcileReceiptResults,
   parseSignedAmount,
   GeminiApiError,
   GeminiConfigError,

@@ -1,18 +1,8 @@
-// Multer middleware: receives the receipt image as multipart/form-data
-// under the "image" field. Stores it temporarily on disk so we can stream
-// it back into the Gemini request without loading the whole file in
-// memory if needed. The actual Gemini call uses the in-memory buffer.
-
-const path = require('path');
-const fs = require('fs');
+// Multer middleware: receives one receipt image in memory. The 4 MB limit is
+// shared with the test cases and keeps request memory predictable.
 const multer = require('multer');
 
-const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads');
-if (!fs.existsSync(UPLOAD_DIR)) {
-  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-}
-
-const MAX_BYTES = Number(process.env.MAX_UPLOAD_BYTES) || 20 * 1024 * 1024; // 20 MB - hỗ trợ ảnh lớn
+const MAX_BYTES = Number(process.env.MAX_UPLOAD_BYTES) || 4 * 1024 * 1024;
 
 const ALLOWED_MIME = new Set([
   'image/jpeg',

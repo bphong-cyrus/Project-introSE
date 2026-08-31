@@ -4,15 +4,10 @@
 module.exports = function errorHandler(err, _req, res, _next) {
   const status = err.status || 500;
 
-  // Surface useful info in dev; never leak stack traces in production.
   const payload = {
     success: false,
     error: err.publicMessage || err.message || 'Internal Server Error',
   };
-
-  if (process.env.NODE_ENV !== 'production') {
-    payload.detail = err.stack;
-  }
 
   // eslint-disable-next-line no-console
   console.error(`[${status}] ${err.message}`);

@@ -15,6 +15,7 @@ import {
 import { Colors } from '../../../shared/constants/colors';
 import { Category } from '../../../shared/types';
 import { useTransactions } from '../../../state/TransactionContext';
+import { MAX_TRANSACTION_AMOUNT } from '../utils';
 import { useCategories } from '../../../state/CategoryContext';
 import TypeSelector from '../components/TypeSelector';
 import TransactionNameInput from '../components/TransactionNameInput';
@@ -97,6 +98,11 @@ const AddTransactionScreen: React.FC<AddTransactionScreenProps> = ({
     // Validation: Amount must be > 0
     if (!amount || amount.trim() === '' || isNaN(numericAmount) || numericAmount <= 0) {
       setAmountError('Số tiền là bắt buộc và phải lớn hơn 0');
+      return;
+    }
+
+    if (numericAmount > MAX_TRANSACTION_AMOUNT) {
+      setAmountError('Số tiền giao dịch không được vượt quá 2 tỷ đồng');
       return;
     }
 

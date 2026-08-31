@@ -15,6 +15,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
 import { useTransactions } from '../../../state/TransactionContext';
+import { MAX_TRANSACTION_AMOUNT } from '../../transactions/utils';
 import { useCategories } from '../../../state/CategoryContext';
 import { Category } from '../../../shared/types';
 import { Image } from 'react-native';
@@ -132,6 +133,11 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
 
     if (!amount || isNaN(numericAmount) || numericAmount <= 0) {
       setAmountError('Số tiền phải lớn hơn 0');
+      return;
+    }
+
+    if (numericAmount > MAX_TRANSACTION_AMOUNT) {
+      setAmountError('Số tiền giao dịch không được vượt quá 2 tỷ đồng');
       return;
     }
 
@@ -255,7 +261,7 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
             <Text style={styles.sectionLabel}>LOẠI GIAO DỊCH</Text>
             <View style={[styles.confidenceBadge, { backgroundColor: getConfidenceColor(data.confidence.type) }]}>
               <Text style={[styles.confidenceText, { color: getConfidenceTextColor(data.confidence.type) }]}>
-                {data.confidence.type}% Match
+                {data.confidence.type}% AI Confidence
               </Text>
             </View>
           </View>
@@ -283,7 +289,7 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
             <Text style={styles.sectionLabel}>TÊN GIAO DỊCH</Text>
             <View style={[styles.confidenceBadge, { backgroundColor: getConfidenceColor(data.confidence.storeName) }]}>
               <Text style={[styles.confidenceText, { color: getConfidenceTextColor(data.confidence.storeName) }]}>
-                {data.confidence.storeName}% Match
+                {data.confidence.storeName}% AI Confidence
               </Text>
             </View>
           </View>
@@ -304,7 +310,7 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
             <Text style={styles.sectionLabel}>TỔNG TIỀN (VND)</Text>
             <View style={[styles.confidenceBadge, { backgroundColor: getConfidenceColor(data.confidence.amount) }]}>
               <Text style={[styles.confidenceText, { color: getConfidenceTextColor(data.confidence.amount) }]}>
-                {data.confidence.amount}% Match
+                {data.confidence.amount}% AI Confidence
               </Text>
             </View>
           </View>
@@ -333,7 +339,7 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
             <Text style={styles.sectionLabel}>TÊN CỬA HÀNG</Text>
             <View style={[styles.confidenceBadge, { backgroundColor: getConfidenceColor(data.confidence.storeName) }]}>
               <Text style={[styles.confidenceText, { color: getConfidenceTextColor(data.confidence.storeName) }]}>
-                {data.confidence.storeName}% Match
+                {data.confidence.storeName}% AI Confidence
               </Text>
             </View>
           </View>
@@ -411,7 +417,7 @@ const AIResultScreen: React.FC<AIResultScreenProps> = ({ data, onBack, onSaved }
             <Text style={styles.sectionLabel}>DANH MỤC</Text>
             <View style={[styles.confidenceBadge, { backgroundColor: getConfidenceColor(data.confidence.category) }]}>
               <Text style={[styles.confidenceText, { color: getConfidenceTextColor(data.confidence.category) }]}>
-                {data.confidence.category}% Match
+                {data.confidence.category}% AI Confidence
               </Text>
             </View>
           </View>

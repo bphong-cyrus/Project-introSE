@@ -30,4 +30,6 @@ export const AI_SCANNER_ENDPOINTS = {
   health: `${API_BASE_URL}/api/ai-scanner/health`,
 } as const;
 
-export const REQUEST_TIMEOUT_MS = 60_000; // 60s - Gemini vision can be slow
+// The SAD target is <= 8 seconds. Keep a bounded recovery window so a slow
+// third-party request fails gracefully instead of leaving the demo hanging.
+export const REQUEST_TIMEOUT_MS = 20_000;

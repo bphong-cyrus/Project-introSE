@@ -15,7 +15,7 @@
 // Gemini itself lives on the server (src/backend/src/services/geminiClient.js)
 // so the API key never ships in the mobile bundle.
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -24,6 +24,7 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
+import type { ImagePickerAsset } from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
 import { useAuth } from '../../../state/AuthContext';
@@ -32,8 +33,9 @@ import { supabase } from '../../../data/datasources/supabase/supabase';
 import CameraViewfinder from '../components/CameraViewfinder';
 import ProcessingOverlay from '../components/ProcessingOverlay';
 import {
-  pickFromCamera,
-  pickFromGallery,
+  pickRawFromCamera,
+  pickRawFromGallery,
+  prepareImageForAnalysis,
   PickedImage,
 } from '../services/imageHelper';
 import {
@@ -81,7 +83,9 @@ const getAverageConfidenceScore = (confidence: ExtractedReceiptData['confidence'
     .filter((value) => Number.isFinite(value));
 
   if (values.length === 0) return null;
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
+  const avg = values.reduce((sum, value) => sum + value, 0) / values.length;
+  // Clamp to valid range (0 to 1 for confidence scores)
+  return Math.min(1, Math.max(0, avg));
 };
 
 const getImageExtension = (mediaType: string) => {
@@ -98,7 +102,7 @@ const getImageExtension = (mediaType: string) => {
 };
 
 const getModelName = (raw: string) => {
-  const match = raw.match(/^model=(.+)$/);
+  const match = raw.match(/^model=([^\r\n]+)/);
   return match?.[1] || null;
 };
 
@@ -152,12 +156,17 @@ const saveAiScanLog = async (params: {
         }
       : null;
 
+    // Clamp amount to database constraint (precision 3, scale 2 = max 9.99)
+    const clampedAmount = params.data?.amount != null
+      ? Math.min(9.99, Math.max(-9.99, params.data.amount))
+      : null;
+
     const { error } = await supabase.from('scan_logs').insert({
       user_id: params.userId,
       receipt_id: null,
       ocr_result_id: null,
       status: params.status,
-      extracted_amount: params.data?.amount ?? null,
+      extracted_amount: clampedAmount,
       extracted_merchant: params.data?.storeName ?? null,
       suggested_category_id: params.data?.categoryId ?? null,
       final_category_id: params.data?.categoryId ?? null,
@@ -185,6 +194,8 @@ const AIScannerScreen: React.FC<AIScannerScreenProps> = ({ onClose, onCapture })
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastImageUri, setLastImageUri] = useState<string | undefined>(undefined);
   const [backendReady, setBackendReady] = useState<boolean | null>(null);
+  const [imageFileSize, setImageFileSize] = useState<number | undefined>(undefined);
+  const processingStartedAtRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -214,9 +225,39 @@ const AIScannerScreen: React.FC<AIScannerScreenProps> = ({ onClose, onCapture })
 
   /* ----------------------------- Handlers -------------------------------- */
 
+  const resetProcessingState = useCallback(() => {
+    processingStartedAtRef.current = undefined;
+    setIsProcessing(false);
+    setImageFileSize(undefined);
+  }, []);
+
+  const showProcessingBeforeImageWork = useCallback(
+    async (asset: { fileSize?: number; base64?: string | null }) => {
+      const startedAt = Date.now();
+      processingStartedAtRef.current = startedAt;
+      const fileSize = asset.fileSize ?? (asset.base64
+        ? Math.round((asset.base64.length * 3) / 4)
+        : undefined);
+
+      setImageFileSize(fileSize);
+      setIsProcessing(true);
+
+      // Yield long enough for React Native to paint the overlay before the
+      // image manipulation task starts.
+      await new Promise<void>((resolve) => setTimeout(resolve, 32));
+    },
+    [],
+  );
+
   const runAnalysis = useCallback(
     async (image: PickedImage) => {
-      const startedAt = Date.now();
+      const startedAt = processingStartedAtRef.current ?? Date.now();
+      processingStartedAtRef.current = startedAt;
+      // Track file size for display
+      const fileSize = image.fileSize ?? (image.base64
+        ? Math.round((image.base64.length * 3) / 4)
+        : undefined);
+      setImageFileSize(fileSize);
       setIsProcessing(true);
       try {
         const result = await analyzeReceipt({
@@ -226,7 +267,8 @@ const AIScannerScreen: React.FC<AIScannerScreenProps> = ({ onClose, onCapture })
           categories: allCategories,
         });
 
-        await saveAiScanLog({
+        // Logging/uploading the receipt must not delay the result screen.
+        void saveAiScanLog({
           userId: user?.id,
           image,
           status: 'success',
@@ -243,7 +285,7 @@ const AIScannerScreen: React.FC<AIScannerScreenProps> = ({ onClose, onCapture })
           err?.message ||
           'Đã có lỗi khi gọi backend. Vui lòng kiểm tra kết nối mạng và thử lại.';
 
-        await saveAiScanLog({
+        void saveAiScanLog({
           userId: user?.id,
           image,
           status: 'failed',
@@ -253,14 +295,14 @@ const AIScannerScreen: React.FC<AIScannerScreenProps> = ({ onClose, onCapture })
         });
 
         Alert.alert(title, detail, [
-          { text: 'Thử lại', onPress: () => {} },
+          { text: 'Thử lại', onPress: () => { void runAnalysis(image); } },
           { text: 'Đóng', style: 'cancel' },
         ]);
       } finally {
-        setIsProcessing(false);
+        resetProcessingState();
       }
     },
-    [allCategories, onCapture, user?.id],
+    [allCategories, onCapture, resetProcessingState, user?.id],
   );
 
   const handleCapture = useCallback(async () => {
@@ -273,14 +315,23 @@ const AIScannerScreen: React.FC<AIScannerScreenProps> = ({ onClose, onCapture })
       return;
     }
 
+    let rawImage: ImagePickerAsset | null = null;
     let image: PickedImage | null = null;
     try {
-      image = await pickFromCamera();
+      rawImage = await pickRawFromCamera();
+      if (rawImage) {
+        await showProcessingBeforeImageWork(rawImage);
+        image = await prepareImageForAnalysis(rawImage);
+      }
     } catch (e: any) {
+      resetProcessingState();
       Alert.alert('Lỗi camera', e?.message ?? 'Không thể mở camera.', [{ text: 'OK' }]);
       return;
     }
-    if (!image) return; // user cancelled
+    if (!image) {
+      resetProcessingState();
+      return;
+    }
 
     setCameraPermission('granted');
     setLastImageUri(image.uri);
@@ -288,16 +339,25 @@ const AIScannerScreen: React.FC<AIScannerScreenProps> = ({ onClose, onCapture })
   }, [cameraPermission, runAnalysis]);
 
   const handleChooseFromGallery = useCallback(async () => {
+    let rawImage: ImagePickerAsset | null = null;
     let image: PickedImage | null = null;
     try {
-      image = await pickFromGallery();
+      rawImage = await pickRawFromGallery();
+      if (rawImage) {
+        await showProcessingBeforeImageWork(rawImage);
+        image = await prepareImageForAnalysis(rawImage);
+      }
     } catch (e: any) {
+      resetProcessingState();
       Alert.alert('Lỗi thư viện ảnh', e?.message ?? 'Không thể mở thư viện ảnh.', [
         { text: 'OK' },
       ]);
       return;
     }
-    if (!image) return;
+    if (!image) {
+      resetProcessingState();
+      return;
+    }
 
     setLastImageUri(image.uri);
     await runAnalysis(image);
@@ -333,6 +393,7 @@ const AIScannerScreen: React.FC<AIScannerScreenProps> = ({ onClose, onCapture })
             style={styles.folderButton}
             onPress={handleChooseFromGallery}
             activeOpacity={0.8}
+            disabled={isProcessing}
           >
             <Ionicons name="folder-open-outline" size={24} color={Colors.textPrimary} />
           </TouchableOpacity>
@@ -344,7 +405,7 @@ const AIScannerScreen: React.FC<AIScannerScreenProps> = ({ onClose, onCapture })
             ]}
             onPress={handleCapture}
             activeOpacity={0.8}
-            disabled={cameraPermission === 'denied'}
+            disabled={cameraPermission === 'denied' || isProcessing}
           >
             <View style={styles.captureButtonInner} />
           </TouchableOpacity>
@@ -389,7 +450,11 @@ const AIScannerScreen: React.FC<AIScannerScreenProps> = ({ onClose, onCapture })
       </ScrollView>
 
       {/* Processing Overlay */}
-      {isProcessing && <ProcessingOverlay />}
+      {isProcessing && (
+        <ProcessingOverlay
+          fileSize={imageFileSize}
+        />
+      )}
     </View>
   );
 };

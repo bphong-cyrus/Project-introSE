@@ -20,19 +20,54 @@ implementation. The flow now goes:
   ExtractedReceiptData  ──► AIResultScreen.tsx (review, edit, save)
 ```
 
+## Performance Optimization
+
+The module includes comprehensive performance tracking and optimization:
+
+### Adaptive Image Compression
+Images are automatically compressed based on their size for optimal AI processing speed:
+
+For images that do not need resizing, the client keeps the original file when
+JPEG re-encoding would make the payload larger. Compression never increases an
+upload unnecessarily.
+
+| Size Category | Image Dimensions | Compression Quality | Purpose |
+|--------------|------------------|---------------------|---------|
+| Tiny | ≤ 400px | 90% | Preserve small-text detail |
+| Small | ≤ 800px | 80% | Balance detail and payload |
+| Large | ≤ 1600px | 72% | OCR-ready compression |
+| XLarge | > 1600px | 65%, resize to 1600px | Bound upload size and memory |
+
+### Performance Tracking
+- **Frontend**: Shows the selected image file size; processing time remains an Admin/telemetry concern
+- **Backend**: Logs processing time per request with image size categorization
+- **Scan Logs**: Records `processing_time_ms` for analytics in Admin dashboard
+
+### Performance Target (Backend)
+
+All image-size categories share the SAD target of **≤8 seconds** for the
+complete OCR and auto-categorization pipeline. Size categories are telemetry
+labels only; they do not relax that target. Requests over 8 seconds are logged
+as slow, and Gemini is aborted after 15 seconds so the UI can recover.
+
+When the Lite pass has overall confidence below 80%, the backend retries once
+with `gemini-3.5-flash` inside the same 8-second budget. Agreed fields receive a
+conservative consensus score; disagreements remain capped at 60% and force
+manual review. A timeout/error in the fallback never discards the first result.
+
 ## Files
 
 | File | Layer (SAD §) | Purpose |
 | --- | --- | --- |
-| `screens/AIScannerScreen.tsx` | Presentation §4.1.6 | Capture, dispatches API call |
+| `screens/AIScannerScreen.tsx` | Presentation §4.1.6 | Capture, dispatches API call, tracks performance |
 | `screens/AIResultScreen.tsx`   | Presentation §4.1.6 | Review + manual correction + save |
 | `components/CameraViewfinder.tsx` | Presentation | Viewfinder + corner guides |
-| `components/ProcessingOverlay.tsx` | Presentation | "AI đang xử lý..." overlay |
+| `components/ProcessingOverlay.tsx` | Presentation | Loading overlay with performance stats |
 | `components/ReceiptPreview.tsx`    | Presentation | Thumbnail + confidence bar |
 | `components/CategoryDropdown.tsx`  | Presentation | Category picker reused from Manual Add |
 | `components/SuccessBanner.tsx`     | Presentation | "OCR confident" badge |
-| `services/imageHelper.ts`         | Business §4.2.6 | expo-image-picker → base64 + mime |
-| `services/backendClient.ts`       | Business §4.2.6 | HTTP client for our Express backend |
+| `services/imageHelper.ts`         | Business §4.2.6 | expo-image-picker → base64 + adaptive compression |
+| `services/backendClient.ts`       | Business §4.2.6 | HTTP client with performance metadata |
 | `services/receiptAnalyzer.ts`     | Business §4.2.6 | Façade: maps mobile types → backend call |
 | `services/aiConfig.ts`            | Business §4.2.6 | Backend URL config |
 

@@ -1,8 +1,10 @@
 // SmartSpend AI - Image Helper Service
 // Bridges expo-image-picker output -> { base64, mediaType } for the backend HTTP client.
+// Performance optimized: adaptive compression based on image size for faster AI processing
 
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
+import * as FileSystem from 'expo-file-system/legacy';
 
 export interface PickedImage {
   base64: string;
@@ -12,6 +14,10 @@ export interface PickedImage {
   height?: number;
   fileSize?: number;
 }
+
+export type BeforeImageProcessing = (
+  asset: ImagePicker.ImagePickerAsset,
+) => void | Promise<void>;
 
 const MIME_BY_EXT: Record<string, string> = {
   jpg: 'image/jpeg',
@@ -23,9 +29,64 @@ const MIME_BY_EXT: Record<string, string> = {
   heif: 'image/jpeg',
 };
 
-// Giới hạn kích thước ảnh tối đa
-const MAX_IMAGE_SIZE = 1920; // pixels
-const COMPRESSION_QUALITY = 0.7;
+// Image dimension limits (optimized for AI processing speed)
+const MAX_IMAGE_SIZE = 1600; // Enough detail for OCR without oversized uploads
+const SMALL_IMAGE_SIZE = 800; // Threshold for smaller compression
+const TINY_IMAGE_SIZE = 400;  // Threshold for minimal compression
+
+// Adaptive compression quality based on image characteristics
+interface CompressionConfig {
+  quality: number;
+  maxDimension: number;
+  description: string;
+}
+
+// Different compression presets for different use cases
+const COMPRESSION_PRESETS = {
+  // Small images (< 400px): Keep quality high
+  tiny: {
+    quality: 0.9,
+    maxDimension: TINY_IMAGE_SIZE,
+    description: 'small receipt',
+  },
+  // Medium images (< 800px): Balanced quality/size
+  small: {
+    quality: 0.8,
+    maxDimension: SMALL_IMAGE_SIZE,
+    description: 'medium receipt',
+  },
+  // Large images (801-1600px): balanced OCR detail and upload size
+  large: {
+    quality: 0.72,
+    maxDimension: MAX_IMAGE_SIZE,
+    description: 'large receipt',
+  },
+  // Very large images (> 1600px): resize and compress before upload
+  xlarge: {
+    quality: 0.65,
+    maxDimension: MAX_IMAGE_SIZE,
+    description: 'very large receipt',
+  },
+};
+
+/**
+ * Get the appropriate compression preset based on image dimensions
+ */
+function getCompressionPreset(width?: number, height?: number, _fileSize?: number): CompressionConfig {
+  const maxDim = Math.max(width || 0, height || 0);
+
+  // Dimension-based fallbacks
+  if (maxDim <= TINY_IMAGE_SIZE) {
+    return COMPRESSION_PRESETS.tiny;
+  }
+  if (maxDim <= SMALL_IMAGE_SIZE) {
+    return COMPRESSION_PRESETS.small;
+  }
+  if (maxDim <= MAX_IMAGE_SIZE) {
+    return COMPRESSION_PRESETS.large;
+  }
+  return COMPRESSION_PRESETS.xlarge;
+}
 
 /* -------------------------------------------------------------------------- */
 /* Permissions                                                                */
@@ -45,14 +106,16 @@ export async function ensureMediaLibraryPermission(): Promise<boolean> {
 /* Picking                                                                    */
 /* -------------------------------------------------------------------------- */
 
-export async function pickFromCamera(): Promise<PickedImage | null> {
+export async function pickRawFromCamera(): Promise<ImagePicker.ImagePickerAsset | null> {
   const granted = await ensureCameraPermission();
   if (!granted) return null;
 
   const result = await ImagePicker.launchCameraAsync({
     mediaTypes: ImagePicker.MediaTypeOptions.Images,
     quality: 1.0, // Chất lượng cao trước, resize sau bằng ImageManipulator
-    base64: true,
+    // Avoid encoding the original full-resolution image before the loading
+    // overlay can be shown. The processed image is encoded below instead.
+    base64: false,
     allowsEditing: false,
     exif: false,
   });
@@ -61,18 +124,19 @@ export async function pickFromCamera(): Promise<PickedImage | null> {
     return null;
   }
 
-  // Resize ảnh nếu cần thiết để giảm kích thước file
-  return resizeImageIfNeeded(result.assets[0]);
+  return result.assets[0];
 }
 
-export async function pickFromGallery(): Promise<PickedImage | null> {
+export async function pickRawFromGallery(): Promise<ImagePicker.ImagePickerAsset | null> {
   const granted = await ensureMediaLibraryPermission();
   if (!granted) return null;
 
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ImagePicker.MediaTypeOptions.Images,
     quality: 1.0, // Chất lượng cao trước, resize sau bằng ImageManipulator
-    base64: true,
+    // Avoid encoding the original full-resolution image before the loading
+    // overlay can be shown. The processed image is encoded below instead.
+    base64: false,
     allowsEditing: false,
     exif: false,
   });
@@ -81,37 +145,81 @@ export async function pickFromGallery(): Promise<PickedImage | null> {
     return null;
   }
 
+  return result.assets[0];
+}
+
+export async function prepareImageForAnalysis(
+  asset: ImagePicker.ImagePickerAsset,
+): Promise<PickedImage> {
   // Resize ảnh nếu cần thiết để giảm kích thước file
-  return resizeImageIfNeeded(result.assets[0]);
+  return resizeImageIfNeeded(asset);
+}
+
+export async function pickFromCamera(
+  beforeProcessing?: BeforeImageProcessing,
+): Promise<PickedImage | null> {
+  const asset = await pickRawFromCamera();
+  if (!asset) return null;
+
+  // Let the screen show its loading state before the potentially expensive
+  // resize/compression step starts.
+  await beforeProcessing?.(asset);
+
+  // Resize ảnh nếu cần thiết để giảm kích thước file
+  return prepareImageForAnalysis(asset);
+}
+
+export async function pickFromGallery(
+  beforeProcessing?: BeforeImageProcessing,
+): Promise<PickedImage | null> {
+  const asset = await pickRawFromGallery();
+  if (!asset) return null;
+
+  // Let the screen show its loading state before the potentially expensive
+  // resize/compression step starts.
+  await beforeProcessing?.(asset);
+
+  // Resize ảnh nếu cần thiết để giảm kích thước file
+  return prepareImageForAnalysis(asset);
 }
 
 /* -------------------------------------------------------------------------- */
-/* Image Resizing                                                              */
+/* Image Resizing & Compression (Performance Optimized)                       */
 /* -------------------------------------------------------------------------- */
 
 /**
- * Resize ảnh nếu kích thước vượt quá giới hạn.
- * Sử dụng expo-image-manipulator để resize và nén ảnh.
+ * Resize and compress image based on its size for optimal AI processing time.
+ * Uses adaptive compression to balance quality and speed.
  */
 async function resizeImageIfNeeded(
   asset: ImagePicker.ImagePickerAsset
 ): Promise<PickedImage> {
-  const needsResize =
-    (asset.width && asset.width > MAX_IMAGE_SIZE) ||
-    (asset.height && asset.height > MAX_IMAGE_SIZE);
+  // Get compression preset based on image characteristics
+  const preset = getCompressionPreset(
+    asset.width,
+    asset.height,
+    asset.fileSize
+  );
 
+  const needsResize =
+    (asset.width && asset.width > preset.maxDimension) ||
+    (asset.height && asset.height > preset.maxDimension);
+
+  // For images that don't need resizing, just apply compression
   if (!needsResize) {
-    // Ảnh nhỏ, chỉ nén nhẹ
-    return compressImage(asset);
+    return compressImageWithPreset(asset, preset);
   }
 
   try {
-    // Tính toán kích thước mới giữ nguyên tỷ lệ
+    // Calculate new dimensions maintaining aspect ratio
     let targetWidth = asset.width ?? MAX_IMAGE_SIZE;
     let targetHeight = asset.height ?? MAX_IMAGE_SIZE;
 
-    if (targetWidth > MAX_IMAGE_SIZE || targetHeight > MAX_IMAGE_SIZE) {
-      const ratio = Math.min(MAX_IMAGE_SIZE / targetWidth, MAX_IMAGE_SIZE / targetHeight);
+    if (targetWidth > preset.maxDimension || targetHeight > preset.maxDimension) {
+      const ratio = Math.min(
+        preset.maxDimension / targetWidth,
+        preset.maxDimension / targetHeight
+      );
       targetWidth = Math.round(targetWidth * ratio);
       targetHeight = Math.round(targetHeight * ratio);
     }
@@ -120,11 +228,15 @@ async function resizeImageIfNeeded(
       asset.uri,
       [{ resize: { width: targetWidth, height: targetHeight } }],
       {
-        compress: COMPRESSION_QUALITY,
+        compress: preset.quality,
         format: ImageManipulator.SaveFormat.JPEG,
         base64: true,
       }
     );
+
+    // Calculate approximate file size from base64
+    const base64Length = manipulated.base64?.length ?? 0;
+    const estimatedSize = Math.round((base64Length * 3) / 4);
 
     return {
       base64: manipulated.base64 ?? '',
@@ -132,40 +244,82 @@ async function resizeImageIfNeeded(
       uri: manipulated.uri,
       width: manipulated.width,
       height: manipulated.height,
-      fileSize: undefined,
+      fileSize: estimatedSize,
     };
   } catch (error) {
     console.warn('Resize thất bại, dùng ảnh gốc:', error);
-    return compressImage(asset);
+    return compressImageWithPreset(asset, preset);
   }
 }
 
 /**
- * Nén ảnh nhỏ mà không resize
+ * Compress image with specific preset
  */
-async function compressImage(asset: ImagePicker.ImagePickerAsset): Promise<PickedImage> {
+async function compressImageWithPreset(
+  asset: ImagePicker.ImagePickerAsset,
+  preset: CompressionConfig
+): Promise<PickedImage> {
   try {
     const manipulated = await ImageManipulator.manipulateAsync(
       asset.uri,
-      [], // Không resize, chỉ nén
+      [], // No resize, just compress
       {
-        compress: COMPRESSION_QUALITY,
+        compress: preset.quality,
         format: ImageManipulator.SaveFormat.JPEG,
         base64: true,
       }
     );
 
+    const processedBase64 = manipulated.base64 ?? '';
+    if (!processedBase64) {
+      return normalizeAssetWithBase64(asset);
+    }
+
+    // Calculate approximate file size from base64.
+    const estimatedSize = Math.round((processedBase64.length * 3) / 4);
+    const originalSize = asset.fileSize ?? (asset.base64
+      ? Math.round((asset.base64.length * 3) / 4)
+      : 0);
+
+    // Re-encoding a very small PNG/WebP as JPEG can make it larger than the
+    // original. Keep the original in that case; compression must never grow
+    // the upload payload when no resize is needed.
+    if (originalSize > 0 && estimatedSize >= originalSize) {
+      return normalizeAssetWithBase64(asset);
+    }
+
     return {
-      base64: manipulated.base64 ?? asset.base64 ?? '',
+      base64: processedBase64,
       mediaType: 'image/jpeg',
       uri: manipulated.uri,
       width: manipulated.width || asset.width,
       height: manipulated.height || asset.height,
-      fileSize: undefined,
+      fileSize: estimatedSize,
     };
   } catch (error) {
-    // Nếu nén thất bại, trả về ảnh gốc
-    return normalizeAsset(asset);
+    // If compression fails, return original
+    return normalizeAssetWithBase64(asset);
+  }
+}
+
+async function normalizeAssetWithBase64(
+  asset: ImagePicker.ImagePickerAsset,
+): Promise<PickedImage> {
+  const normalized = normalizeAsset(asset);
+  if (normalized.base64) return normalized;
+
+  try {
+    const base64 = await FileSystem.readAsStringAsync(asset.uri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    return {
+      ...normalized,
+      base64,
+      fileSize: asset.fileSize ?? Math.round((base64.length * 3) / 4),
+    };
+  } catch (error) {
+    console.warn('Không thể đọc ảnh gốc để tạo base64:', error);
+    return normalized;
   }
 }
 
@@ -189,13 +343,19 @@ function normalizeAsset(asset: ImagePicker.ImagePickerAsset): PickedImage {
     }
   }
 
+  // Calculate file size from base64 if not provided
+  let fileSize = asset.fileSize;
+  if (!fileSize && base64) {
+    fileSize = Math.round((base64.length * 3) / 4);
+  }
+
   return {
     base64,
     mediaType,
     uri: asset.uri,
     width: asset.width,
     height: asset.height,
-    fileSize: asset.fileSize,
+    fileSize,
   };
 }
 
@@ -209,4 +369,44 @@ function guessMime(uri: string, explicit?: string | null): string {
   return MIME_BY_EXT[ext] ?? 'image/jpeg';
 }
 
-export const __testing = { guessMime, normalizeAsset };
+/* -------------------------------------------------------------------------- */
+/* Performance Stats (for debugging/monitoring)                               */
+/* -------------------------------------------------------------------------- */
+
+interface ImageProcessingStats {
+  originalWidth: number;
+  originalHeight: number;
+  processedWidth: number;
+  processedHeight: number;
+  compressionRatio: number;
+  estimatedOriginalSize: number;
+  estimatedProcessedSize: number;
+  presetUsed: string;
+}
+
+export function calculateProcessingStats(
+  original: ImagePicker.ImagePickerAsset,
+  processed: PickedImage
+): ImageProcessingStats {
+  const originalSize = original.fileSize ?? (original.base64 ? Math.round((original.base64.length * 3) / 4) : 0);
+  const processedSize = processed.fileSize ?? (processed.base64 ? Math.round((processed.base64.length * 3) / 4) : 0);
+
+  return {
+    originalWidth: original.width ?? 0,
+    originalHeight: original.height ?? 0,
+    processedWidth: processed.width ?? 0,
+    processedHeight: processed.height ?? 0,
+    compressionRatio: originalSize > 0 ? processedSize / originalSize : 1,
+    estimatedOriginalSize: originalSize,
+    estimatedProcessedSize: processedSize,
+    presetUsed: getCompressionPreset(original.width, original.height, original.fileSize).description,
+  };
+}
+
+export const __testing = {
+  guessMime,
+  normalizeAsset,
+  normalizeAssetWithBase64,
+  getCompressionPreset,
+  calculateProcessingStats,
+};
