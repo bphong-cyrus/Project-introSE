@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Modal,
   Platform,
@@ -15,15 +14,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
 import { useNotifications } from '../../../state/NotificationContext';
-import {
-  createMonthlyExcelReport,
-  downloadMonthlyExcelReport,
-  MonthlyReportExportResponse,
-} from '../../../modules/reports';
-import { formatCurrency } from '../../../shared/utils/formatCurrency';
 
 type SettingsScreenProps = {
-  onBack: () => void;
+  onBack?: () => void;
+  showBackButton?: boolean;
 };
 
 type InfoModalType = 'about' | 'privacy';
@@ -104,14 +98,6 @@ const INFO_CONTENT: Record<InfoModalType, InfoModalContent> = {
   },
 };
 
-const getCurrentMonth = () => {
-  const now = new Date();
-  return {
-    month: now.getMonth() + 1,
-    year: now.getFullYear(),
-  };
-};
-
 const formatDateTime = (value: string) => new Intl.DateTimeFormat('vi-VN', {
   day: '2-digit',
   month: '2-digit',
@@ -120,14 +106,10 @@ const formatDateTime = (value: string) => new Intl.DateTimeFormat('vi-VN', {
   minute: '2-digit',
 }).format(new Date(value));
 
-const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
+const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, showBackButton = true }) => {
   const { settings, updateSettings } = useNotifications();
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
   const [infoModal, setInfoModal] = useState<InfoModalType | null>(null);
-  const [isExporting, setIsExporting] = useState(false);
-  const [lastExport, setLastExport] = useState<MonthlyReportExportResponse | null>(null);
-  const [reportMonth, setReportMonth] = useState(getCurrentMonth().month);
-  const [reportYear, setReportYear] = useState(getCurrentMonth().year);
   const [notificationForm, setNotificationForm] = useState({
     pushEnabled: true,
     dailyReminderEnabled: false,
@@ -184,30 +166,6 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
     }
   };
 
-  const changeReportMonth = (offset: number) => {
-    const date = new Date(reportYear, reportMonth - 1 + offset, 1);
-    setReportMonth(date.getMonth() + 1);
-    setReportYear(date.getFullYear());
-  };
-
-  const handleExportReport = async () => {
-    setIsExporting(true);
-    setLastExport(null);
-    try {
-      const exportResult = await createMonthlyExcelReport(reportMonth, reportYear);
-      setLastExport(exportResult);
-      await downloadMonthlyExcelReport(exportResult.exportId, exportResult.fileName);
-      Alert.alert(
-        'Đã xuất báo cáo Excel',
-        `Báo cáo tháng ${exportResult.summary.month}/${exportResult.summary.year} gồm ${exportResult.summary.transactionCount} giao dịch, tổng chi tiêu ${formatCurrency(exportResult.summary.totalExpense)}.`
-      );
-    } catch (error: any) {
-      Alert.alert('Không thể xuất báo cáo', error?.message || 'Vui lòng kiểm tra backend và thử lại.');
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
   const notificationStatus = settings?.daily_reminder_enabled
     ? settings.reminder_frequency === 'fixed_date'
       ? `Một lần ${settings.reminder_date ? formatDateTime(settings.reminder_date) : ''}`
@@ -219,8 +177,14 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.headerButton} onPress={onBack}>
-          <Ionicons name="arrow-back" size={22} color={Colors.primary} />
+        <TouchableOpacity
+          style={styles.headerButton}
+          onPress={onBack}
+          disabled={!showBackButton || !onBack}
+        >
+          {showBackButton && onBack ? (
+            <Ionicons name="arrow-back" size={22} color={Colors.primary} />
+          ) : null}
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Cài đặt</Text>
         <View style={styles.headerButton} />
@@ -232,7 +196,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
           <View style={styles.calloutTextBox}>
             <Text style={styles.calloutTitle}>Cấu hình ứng dụng</Text>
             <Text style={styles.calloutText}>
-              Trang này chỉ giữ các thiết lập ứng dụng, phần hồ sơ/avatar/feedback vẫn nằm ở Hồ sơ cá nhân.
+              Trang này là tab riêng cho thiết lập ứng dụng. Xuất dữ liệu đã được chuyển sang tab Báo cáo.
             </Text>
           </View>
         </View>
@@ -262,44 +226,6 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
               <View style={[styles.switchDot, settings?.push_enabled !== false && styles.switchDotOn]} />
             </View>
           </View>
-        </View>
-
-        <Text style={styles.sectionLabel}>Xuất báo cáo</Text>
-        <View style={styles.card}>
-          <View style={styles.reportHeader}>
-            <TouchableOpacity style={styles.monthArrow} onPress={() => changeReportMonth(-1)}>
-              <Ionicons name="chevron-back" size={18} color={Colors.primary} />
-            </TouchableOpacity>
-            <Text style={styles.reportMonth}>Tháng {reportMonth}/{reportYear}</Text>
-            <TouchableOpacity style={styles.monthArrow} onPress={() => changeReportMonth(1)}>
-              <Ionicons name="chevron-forward" size={18} color={Colors.primary} />
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.reportDescription}>
-            File Excel gồm sheet tổng quan, giao dịch trong tháng, giao dịch income, hạn mức ngân sách theo danh mục,
-            toàn bộ transactions và sheet biểu đồ tuần/danh mục/so sánh tháng.
-          </Text>
-          <TouchableOpacity
-            style={[styles.primaryButton, isExporting && styles.disabledButton]}
-            onPress={handleExportReport}
-            disabled={isExporting}
-          >
-            {isExporting ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <>
-                <Ionicons name="download-outline" size={18} color="#FFFFFF" />
-                <Text style={styles.primaryButtonText}>Xuất Excel</Text>
-              </>
-            )}
-          </TouchableOpacity>
-          {lastExport ? (
-            <View style={styles.exportSummary}>
-              <Text style={styles.exportSummaryTitle}>Lần xuất gần nhất</Text>
-              <Text style={styles.exportSummaryText}>File: {lastExport.fileName}</Text>
-              <Text style={styles.exportSummaryText}>Tạo lúc: {formatDateTime(lastExport.summary.generatedAt)}</Text>
-            </View>
-          ) : null}
         </View>
 
         <Text style={styles.sectionLabel}>Giới thiệu</Text>
@@ -514,13 +440,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textTransform: 'uppercase',
   },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
   primaryButton: {
     minHeight: 48,
     borderRadius: 12,
@@ -530,9 +449,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     paddingHorizontal: 14,
-  },
-  disabledButton: {
-    opacity: 0.65,
   },
   primaryButtonText: {
     color: '#FFFFFF',
@@ -597,48 +513,6 @@ const styles = StyleSheet.create({
   },
   switchDotOn: {
     backgroundColor: '#FFFFFF',
-  },
-  reportHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  monthArrow: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#E8F5E9',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  reportMonth: {
-    color: Colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  reportDescription: {
-    color: Colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 19,
-    marginBottom: 14,
-  },
-  exportSummary: {
-    marginTop: 12,
-    borderRadius: 12,
-    backgroundColor: '#F8FAFC',
-    padding: 12,
-  },
-  exportSummaryTitle: {
-    color: Colors.textPrimary,
-    fontSize: 13,
-    fontWeight: '900',
-    marginBottom: 4,
-  },
-  exportSummaryText: {
-    color: Colors.textSecondary,
-    fontSize: 12,
-    fontWeight: '600',
   },
   versionText: {
     textAlign: 'center',

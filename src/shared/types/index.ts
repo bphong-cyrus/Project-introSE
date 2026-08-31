@@ -99,7 +99,7 @@ export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
   ForgotPassword: undefined;
-  OTP: { email: string; purpose: 'register' | 'resetPassword' };
+  OTP: { email: string; purpose: 'register' | 'resetPassword' | 'changePassword' };
   SetNewPassword: { email: string };
   Main: undefined;
   Profile: undefined;
@@ -111,6 +111,7 @@ export type RootStackParamList = {
 export type MainTabParamList = {
   Home: undefined;
   Transactions: undefined;
+  Add: undefined;
   Budget: undefined;
   Profile: undefined;
 };

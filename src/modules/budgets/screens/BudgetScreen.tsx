@@ -5,6 +5,8 @@
 
 import React, { useState, useCallback } from 'react';
 import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
   View,
   Text,
   StyleSheet,
@@ -13,6 +15,8 @@ import {
   RefreshControl,
   Modal,
   Alert,
+  TextInput,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
@@ -28,6 +32,7 @@ import { DeleteCategoryDialog, TransactionHistoryScreen, AddCategorySheet, AddIn
 import CategoryEditScreen from './CategoryEditScreen';
 import { useAuth } from '../../../state/AuthContext';
 import { supabase } from '../../../data/datasources/supabase/supabase';
+import { useMonthlyBudgetIncome } from '../hooks/useMonthlyBudgetIncome';
 
 const VIETNAMESE_MONTHS = [
   'Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6',
@@ -35,6 +40,21 @@ const VIETNAMESE_MONTHS = [
 ];
 
 const MONTHS_SHORT = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12'];
+const INCOME_GREEN = '#2ECC71';
+const EXPENSE_RED = '#E74C3C';
+
+const formatCurrency = (amount: number): string => {
+  return `${new Intl.NumberFormat('vi-VN').format(Math.round(amount))} VND`;
+};
+
+const parseCurrencyInput = (text: string): number => {
+  const digits = text.replace(/[^\d]/g, '');
+  return parseInt(digits, 10) || 0;
+};
+
+const buildBudgetLimitError = (income: number) => (
+  `Tổng hạn mức ngân sách các danh mục không được vượt quá Tổng thu nhập của tháng (${formatCurrency(income)}). Vui lòng điều chỉnh lại!`
+);
 
 const BudgetScreen: React.FC = () => {
   // Use global contexts for shared state
@@ -64,8 +84,21 @@ const BudgetScreen: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
 
-  // User's total monthly income/budget
-  const [totalIncome, setTotalIncome] = useState(100000000);
+  const {
+    fixedMonthlyIncome,
+    isFixedIncomeOverridden,
+    isLoadingIncome,
+    variableIncomeTotal,
+    totalIncome,
+    totalExpense,
+    savings,
+    incomeCategoryAmounts,
+    refreshMonthlyIncome,
+    saveFixedMonthlyIncome,
+  } = useMonthlyBudgetIncome(selectedMonth, selectedYear);
+  const [showFixedIncomeModal, setShowFixedIncomeModal] = useState(false);
+  const [fixedIncomeInput, setFixedIncomeInput] = useState('');
+  const [isSavingFixedIncome, setIsSavingFixedIncome] = useState(false);
 
   // Budget limits per expense category
   const [expenseBudgetLimits, setExpenseBudgetLimits] = useState<{ [key: string]: number }>({});
@@ -98,19 +131,13 @@ const BudgetScreen: React.FC = () => {
 
     const { data, error } = await supabase
       .from('budgets')
-      .update({
-        expected_income_amount: totalIncome,
-        expected_income_currency_code: 'VND',
-        income_frequency: 'monthly',
-        updated_at: new Date().toISOString(),
-      })
+      .select('*')
       .eq('budget_id', ensuredBudgetId)
-      .select()
       .single();
 
     if (error) throw error;
     return data;
-  }, [selectedMonth, selectedYear, totalIncome, user?.id]);
+  }, [selectedMonth, selectedYear, user?.id]);
 
   const evaluateBudgetNotifications = useCallback(async () => {
     const { error } = await supabase.rpc('evaluate_user_budget_notifications');
@@ -161,6 +188,11 @@ const BudgetScreen: React.FC = () => {
     if (!user?.id) return;
 
     const nextLimits = { ...expenseBudgetLimits, [categoryId]: newLimit };
+    const nextTotal = fallbackTotal ?? expenseCats.reduce((sum, category) => sum + (nextLimits[category.id] ?? 0), 0);
+    if (nextTotal > totalIncome) {
+      throw new Error(buildBudgetLimitError(totalIncome));
+    }
+
     const budget = await ensureMonthlyBudget();
     if (!budget) return;
 
@@ -178,7 +210,6 @@ const BudgetScreen: React.FC = () => {
 
     if (allocationError) throw allocationError;
 
-    const nextTotal = fallbackTotal ?? expenseCats.reduce((sum, category) => sum + (nextLimits[category.id] ?? 0), 0);
     const { error: budgetUpdateError } = await supabase
       .from('budgets')
       .update({
@@ -189,7 +220,7 @@ const BudgetScreen: React.FC = () => {
 
     if (budgetUpdateError) throw budgetUpdateError;
     await evaluateBudgetNotifications();
-  }, [ensureMonthlyBudget, evaluateBudgetNotifications, expenseBudgetLimits, expenseCats, user?.id]);
+  }, [ensureMonthlyBudget, evaluateBudgetNotifications, expenseBudgetLimits, expenseCats, totalIncome, user?.id]);
 
   // Note: transactions from useTransactions() context is used for category calculations
 
@@ -217,39 +248,17 @@ const BudgetScreen: React.FC = () => {
     });
   }, [expenseCats, selectedMonth, selectedYear, expenseBudgetLimits, transactions]);
 
-  // Calculate income category amounts
-  const getIncomeCategoryAmounts = useCallback((): { category: Category; amount: number }[] => {
-    return incomeCats.map((category) => {
-      const categoryTransactions = transactions.filter((txn) => {
-        const txnDate = new Date(txn.date);
-        return (
-          txn.categoryId === category.id &&
-          txn.type === 'income' &&
-          txnDate.getMonth() === selectedMonth &&
-          txnDate.getFullYear() === selectedYear
-        );
-      });
-
-      const amount = categoryTransactions.reduce((sum, txn) => sum + txn.amount, 0);
-
-      return { category, amount };
-    });
-  }, [incomeCats, selectedMonth, selectedYear, transactions]);
-
   const expenseBudgets = getExpenseCategoryBudgets();
-  const incomeAmounts = getIncomeCategoryAmounts();
 
   // Calculate totals
   const totalBudgetLimit = expenseBudgets.reduce((sum, cb) => sum + cb.budgetLimit, 0);
-  const totalSpent = expenseBudgets.reduce((sum, cb) => sum + cb.spent, 0);
-  const totalIncomeReceived = incomeAmounts.reduce((sum, ia) => sum + ia.amount, 0);
+  const totalSpent = totalExpense;
   const overallPercentage = totalBudgetLimit > 0
     ? Math.round((totalSpent / totalBudgetLimit) * 100)
     : 0;
 
   // Check if total budget exceeds income
   const isOverBudget = totalBudgetLimit > totalIncome;
-  const overBudgetAmount = totalBudgetLimit - totalIncome;
 
   // Handle month change
   const handleMonthChange = (month: number, year: number) => {
@@ -264,6 +273,7 @@ const BudgetScreen: React.FC = () => {
       await Promise.all([
         refreshCategories(),
         refreshTransactions(),
+        refreshMonthlyIncome(),
         syncBudgetAllocationsFromDatabase(),
       ]);
     } catch (error) {
@@ -272,7 +282,7 @@ const BudgetScreen: React.FC = () => {
     } finally {
       setRefreshing(false);
     }
-  }, [refreshCategories, refreshTransactions, syncBudgetAllocationsFromDatabase]);
+  }, [refreshCategories, refreshMonthlyIncome, refreshTransactions, syncBudgetAllocationsFromDatabase]);
 
   // Add expense category
   const handleAddExpenseCategory = async (categoryData: { name: string; color: string; icon: string }) => {
@@ -371,13 +381,65 @@ const BudgetScreen: React.FC = () => {
     setShowTransactionHistory(true);
   };
 
+  const openFixedIncomeEditor = () => {
+    setFixedIncomeInput(String(Math.round(fixedMonthlyIncome || 0)));
+    setShowFixedIncomeModal(true);
+  };
+
+  const handleFixedIncomeInputChange = (text: string) => {
+    setFixedIncomeInput(text.replace(/[^\d]/g, ''));
+  };
+
+  const handleSaveFixedMonthlyIncome = async () => {
+    const amount = parseCurrencyInput(fixedIncomeInput);
+    if (amount < 0) {
+      Alert.alert('Thu nhập không hợp lệ', 'Thu nhập cố định tháng phải là số không âm.');
+      return;
+    }
+
+    setIsSavingFixedIncome(true);
+    try {
+      await saveFixedMonthlyIncome(amount);
+      await refreshMonthlyIncome();
+      setShowFixedIncomeModal(false);
+
+      const nextTotalIncome = amount + variableIncomeTotal;
+      if (totalBudgetLimit > nextTotalIncome) {
+        Alert.alert(
+          'Cần kiểm tra lại hạn mức',
+          `Tổng hạn mức hiện tại (${formatCurrency(totalBudgetLimit)}) đang vượt Tổng thu nhập mới (${formatCurrency(nextTotalIncome)}). Các lần chỉnh hạn mức tiếp theo sẽ bị chặn cho đến khi bạn điều chỉnh lại.`
+        );
+      }
+    } catch (error) {
+      console.warn('Không thể lưu thu nhập cố định tháng:', error);
+      Alert.alert(
+        'Không thể lưu thu nhập',
+        error instanceof Error ? error.message : 'Vui lòng thử lại.'
+      );
+    } finally {
+      setIsSavingFixedIncome(false);
+    }
+  };
+
   const handleSaveCategoryBudget = async (categoryId: string, newLimit: number) => {
-    setExpenseBudgetLimits(prev => ({ ...prev, [categoryId]: newLimit }));
+    const currentLimit = expenseBudgetLimits[categoryId] ?? 0;
+    const nextTotalBudget = totalBudgetLimit - currentLimit + newLimit;
+    if (nextTotalBudget > totalIncome) {
+      Alert.alert('Không thể lưu hạn mức', buildBudgetLimitError(totalIncome));
+      return false;
+    }
+
     try {
       await saveCategoryBudgetToDatabase(categoryId, newLimit);
+      setExpenseBudgetLimits(prev => ({ ...prev, [categoryId]: newLimit }));
+      return true;
     } catch (error) {
       console.warn('Không thể lưu hạn mức danh mục:', error);
-      Alert.alert('Lỗi', 'Hạn mức đã cập nhật tạm thời nhưng chưa lưu được vào cơ sở dữ liệu.');
+      const message = error instanceof Error
+        ? error.message
+        : 'Không thể lưu hạn mức vào cơ sở dữ liệu.';
+      Alert.alert('Lỗi', message);
+      return false;
     }
   };
 
@@ -422,7 +484,7 @@ const BudgetScreen: React.FC = () => {
             <View style={styles.overBudgetContent}>
               <Text style={styles.overBudgetTitle}>Vượt quá thu nhập!</Text>
               <Text style={styles.overBudgetMessage}>
-                Tổng hạn mức ({totalBudgetLimit.toLocaleString('vi-VN')} VND) vượt quá thu nhập tháng ({totalIncome.toLocaleString('vi-VN')} VND)
+                Tổng hạn mức ({formatCurrency(totalBudgetLimit)}) vượt quá Tổng thu nhập của tháng ({formatCurrency(totalIncome)}).
               </Text>
             </View>
           </View>
@@ -433,7 +495,6 @@ const BudgetScreen: React.FC = () => {
           <RadialGauge
             spent={totalSpent}
             total={totalBudgetLimit}
-            totalIncome={totalIncome}
             size={260}
           />
         </View>
@@ -443,6 +504,38 @@ const BudgetScreen: React.FC = () => {
           totalLimit={totalBudgetLimit}
           totalSpent={totalSpent}
         />
+
+        <View style={styles.metricCard}>
+          <View style={styles.metricHeader}>
+            <View style={[styles.metricIcon, { backgroundColor: INCOME_GREEN + '18' }]}>
+              <Ionicons name="trending-up" size={20} color={INCOME_GREEN} />
+            </View>
+            <View style={styles.metricTextBox}>
+              <Text style={styles.metricLabel}>Tổng thu nhập</Text>
+              <Text style={[styles.metricAmount, { color: INCOME_GREEN }]}>{formatCurrency(totalIncome)}</Text>
+            </View>
+          </View>
+          <Text style={styles.metricNote}>
+            Thu nhập cố định tháng + thu nhập phát sinh theo danh mục.
+          </Text>
+        </View>
+
+        <View style={styles.metricCard}>
+          <View style={styles.metricHeader}>
+            <View style={[styles.metricIcon, { backgroundColor: (savings >= 0 ? INCOME_GREEN : EXPENSE_RED) + '18' }]}>
+              <Ionicons name={savings >= 0 ? 'wallet' : 'alert-circle'} size={20} color={savings >= 0 ? INCOME_GREEN : EXPENSE_RED} />
+            </View>
+            <View style={styles.metricTextBox}>
+              <Text style={styles.metricLabel}>Số tiền tiết kiệm</Text>
+              <Text style={[styles.metricAmount, { color: savings >= 0 ? INCOME_GREEN : EXPENSE_RED }]}>
+                {formatCurrency(savings)}
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.metricNote}>
+            Công thức: Tổng thu nhập - Tổng chi tiêu của tháng.
+          </Text>
+        </View>
 
         {/* ==================== INCOME CATEGORIES SECTION ==================== */}
         <View style={styles.sectionHeader}>
@@ -458,7 +551,32 @@ const BudgetScreen: React.FC = () => {
 
         {/* Income Category List */}
         <View style={styles.categoryList}>
-          {incomeAmounts.map((ia) => (
+          <View style={styles.fixedIncomeCard}>
+            <View style={styles.fixedIncomeMain}>
+              <View style={[styles.fixedIncomeIcon, { backgroundColor: INCOME_GREEN + '18' }]}>
+                <Ionicons name="wallet-outline" size={24} color={INCOME_GREEN} />
+              </View>
+              <View style={styles.fixedIncomeContent}>
+                <Text style={styles.fixedIncomeTitle}>Thu nhập cố định tháng {selectedMonth + 1}/{selectedYear}</Text>
+                <Text style={styles.fixedIncomeSubtitle}>
+                  {isFixedIncomeOverridden ? 'Đã chỉnh riêng cho tháng này' : 'Mặc định từ Hồ sơ cá nhân'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.fixedIncomeFooter}>
+              {isLoadingIncome ? (
+                <ActivityIndicator color={INCOME_GREEN} />
+              ) : (
+                <Text style={styles.fixedIncomeAmount}>+{formatCurrency(fixedMonthlyIncome)}</Text>
+              )}
+              <TouchableOpacity style={styles.fixedIncomeEditButton} onPress={openFixedIncomeEditor}>
+                <Ionicons name="create-outline" size={15} color="#FFFFFF" />
+                <Text style={styles.fixedIncomeEditText}>Sửa</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {incomeCategoryAmounts.map((ia) => (
             <IncomeCategoryCard
               key={ia.category.id}
               category={ia.category}
@@ -571,12 +689,83 @@ const BudgetScreen: React.FC = () => {
           currentTotalBudget={totalBudgetLimit}
           onClose={() => setShowCategoryEdit(false)}
           onSave={async (newLimit) => {
+            let saved = true;
             if (selectedCategoryBudget?.category) {
-              await handleSaveCategoryBudget(selectedCategoryBudget.category.id, newLimit);
+              saved = await handleSaveCategoryBudget(selectedCategoryBudget.category.id, newLimit);
             }
-            setShowCategoryEdit(false);
+            if (saved) {
+              setShowCategoryEdit(false);
+            }
           }}
         />
+      </Modal>
+
+      {/* Fixed Monthly Income Modal */}
+      <Modal
+        visible={showFixedIncomeModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowFixedIncomeModal(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.incomeModalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <TouchableOpacity
+            style={styles.incomeModalBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowFixedIncomeModal(false)}
+          />
+          <View style={styles.incomeModalCard}>
+            <View style={styles.incomeModalHeader}>
+              <Text style={styles.incomeModalTitle}>Thu nhập cố định tháng {selectedMonth + 1}/{selectedYear}</Text>
+              <TouchableOpacity onPress={() => setShowFixedIncomeModal(false)}>
+                <Ionicons name="close" size={24} color={Colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.incomeModalDescription}>
+              Giá trị này được lưu riêng cho tháng đang chọn. Nếu chưa chỉnh, hệ thống dùng Thu nhập hàng tháng trong Hồ sơ cá nhân làm mặc định.
+            </Text>
+
+            <View style={styles.incomeInputContainer}>
+              <TextInput
+                style={styles.incomeInput}
+                value={fixedIncomeInput ? parseCurrencyInput(fixedIncomeInput).toLocaleString('vi-VN') : ''}
+                onChangeText={handleFixedIncomeInputChange}
+                keyboardType="numeric"
+                placeholder="0"
+                placeholderTextColor={Colors.textMuted}
+              />
+              <Text style={styles.incomeCurrency}>VND</Text>
+            </View>
+
+            <View style={styles.incomePreviewCard}>
+              <Text style={styles.incomePreviewLabel}>Tổng thu nhập sau khi lưu</Text>
+              <Text style={styles.incomePreviewValue}>
+                {formatCurrency(parseCurrencyInput(fixedIncomeInput) + variableIncomeTotal)}
+              </Text>
+              <Text style={styles.incomePreviewNote}>
+                Bao gồm thu nhập cố định và {formatCurrency(variableIncomeTotal)} thu nhập phát sinh.
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.incomeSaveButton, isSavingFixedIncome && styles.incomeSaveButtonDisabled]}
+              onPress={handleSaveFixedMonthlyIncome}
+              disabled={isSavingFixedIncome}
+            >
+              {isSavingFixedIncome ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark" size={20} color="#FFFFFF" />
+                  <Text style={styles.incomeSaveButtonText}>Lưu thu nhập cố định</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Add Expense Category Sheet */}
@@ -695,6 +884,49 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     backgroundColor: Colors.backgroundSecondary,
   },
+  metricCard: {
+    backgroundColor: Colors.background,
+    borderRadius: 16,
+    padding: 16,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  metricHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  metricIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  metricTextBox: {
+    flex: 1,
+  },
+  metricLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: Colors.textSecondary,
+    marginBottom: 3,
+  },
+  metricAmount: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  metricNote: {
+    marginTop: 10,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    lineHeight: 17,
+  },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -725,8 +957,175 @@ const styles = StyleSheet.create({
   categoryList: {
     paddingHorizontal: 16,
   },
+  fixedIncomeCard: {
+    backgroundColor: Colors.background,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#D8F5E4',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  fixedIncomeMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  fixedIncomeIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  fixedIncomeContent: {
+    flex: 1,
+  },
+  fixedIncomeTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+    marginBottom: 3,
+  },
+  fixedIncomeSubtitle: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  fixedIncomeFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: Colors.divider,
+  },
+  fixedIncomeAmount: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '700',
+    color: INCOME_GREEN,
+  },
+  fixedIncomeEditButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 18,
+    backgroundColor: INCOME_GREEN,
+  },
+  fixedIncomeEditText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
   bottomSpacer: {
     height: 20,
+  },
+  incomeModalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  incomeModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+  },
+  incomeModalCard: {
+    backgroundColor: Colors.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 24,
+  },
+  incomeModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 10,
+  },
+  incomeModalTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+  },
+  incomeModalDescription: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    lineHeight: 19,
+    marginBottom: 16,
+  },
+  incomeInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    backgroundColor: Colors.backgroundSecondary,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  incomeInput: {
+    flex: 1,
+    minHeight: 56,
+    fontSize: 28,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    paddingVertical: 12,
+  },
+  incomeCurrency: {
+    fontSize: 20,
+    fontWeight: '500',
+    color: Colors.textSecondary,
+    marginLeft: 8,
+  },
+  incomePreviewCard: {
+    borderRadius: 14,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    padding: 12,
+    marginTop: 14,
+    marginBottom: 16,
+  },
+  incomePreviewLabel: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    marginBottom: 4,
+  },
+  incomePreviewValue: {
+    fontSize: 14,
+    color: INCOME_GREEN,
+    fontWeight: '600',
+  },
+  incomePreviewNote: {
+    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 17,
+    color: Colors.textSecondary,
+  },
+  incomeSaveButton: {
+    minHeight: 48,
+    borderRadius: 12,
+    backgroundColor: INCOME_GREEN,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  incomeSaveButtonDisabled: {
+    opacity: 0.65,
+  },
+  incomeSaveButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   // Month Picker Modal
   modalOverlay: {

@@ -21,13 +21,22 @@ import { formatCurrency } from '../../../shared/utils/formatCurrency';
 interface PieChartProps {
   data: CategoryBreakdown[];
   size?: number;
+  centerLabel?: string;
+  selectedAmountColor?: string;
+  totalAmountColor?: string;
 }
 
 const DEFAULT_SIZE = 220;
 const INNER_RADIUS_RATIO = 0.55; // Donut hole size
 const GAP_DEGREES = 2; // Gap between slices (degrees)
 
-const PieChart: React.FC<PieChartProps> = ({ data, size = DEFAULT_SIZE }) => {
+const PieChart: React.FC<PieChartProps> = ({
+  data,
+  size = DEFAULT_SIZE,
+  centerLabel = 'Tổng chi tiêu',
+  selectedAmountColor = Colors.primary,
+  totalAmountColor = Colors.textPrimary,
+}) => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const outerRadius = size / 2;
@@ -131,7 +140,7 @@ const PieChart: React.FC<PieChartProps> = ({ data, size = DEFAULT_SIZE }) => {
           {selectedSlice ? (
             <>
               <Text style={styles.centerCategoryName}>{selectedSlice.category.name}</Text>
-              <Text style={styles.centerAmount} numberOfLines={1} adjustsFontSizeToFit>
+              <Text style={[styles.centerAmount, { color: selectedAmountColor }]} numberOfLines={1} adjustsFontSizeToFit>
                 {formatCurrencyAmount(selectedSlice.amount)}
               </Text>
               <Text style={styles.centerCurrency}>VND</Text>
@@ -139,8 +148,8 @@ const PieChart: React.FC<PieChartProps> = ({ data, size = DEFAULT_SIZE }) => {
             </>
           ) : (
             <>
-              <Text style={styles.centerLabel}>Tổng chi tiêu</Text>
-              <Text style={styles.centerTotalAmount} numberOfLines={1} adjustsFontSizeToFit>
+              <Text style={styles.centerLabel}>{centerLabel}</Text>
+              <Text style={[styles.centerTotalAmount, { color: totalAmountColor }]} numberOfLines={1} adjustsFontSizeToFit>
                 {formatCurrencyAmount(total)}
               </Text>
               <Text style={styles.centerCurrency}>VND</Text>

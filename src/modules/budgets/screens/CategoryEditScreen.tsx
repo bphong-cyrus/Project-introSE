@@ -17,6 +17,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../../shared/constants/colors';
@@ -121,7 +122,9 @@ const CategoryEditScreen: React.FC<CategoryEditScreenProps> = ({
     // Validate: total budget should not exceed monthly income
     const newTotalBudget = currentTotalBudget - (categoryBudget?.budgetLimit || 0) + amount;
     if (newTotalBudget > totalIncome) {
-      setError(`Tổng hạn mức (${formatCurrency(newTotalBudget)}) vượt thu nhập (${formatCurrency(totalIncome)})`);
+      const message = `Tổng hạn mức ngân sách các danh mục không được vượt quá Tổng thu nhập của tháng (${formatCurrency(totalIncome)}). Vui lòng điều chỉnh lại!`;
+      setError(message);
+      Alert.alert('Không thể lưu hạn mức', message);
       return;
     }
 
