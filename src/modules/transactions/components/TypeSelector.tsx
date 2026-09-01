@@ -27,6 +27,7 @@ const TypeSelector: React.FC<TypeSelectorProps> = ({ selectedType, onTypeChange 
           ]}
           onPress={() => onTypeChange('expense')}
           activeOpacity={0.7}
+          testID="type-expense-button"
         >
           <Text
             style={[
@@ -45,6 +46,7 @@ const TypeSelector: React.FC<TypeSelectorProps> = ({ selectedType, onTypeChange 
           ]}
           onPress={() => onTypeChange('income')}
           activeOpacity={0.7}
+          testID="type-income-button"
         >
           <Text
             style={[

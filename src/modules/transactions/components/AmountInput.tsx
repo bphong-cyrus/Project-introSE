@@ -53,6 +53,7 @@ const AmountInput: React.FC<AmountInputProps> = ({ amount, onAmountChange, error
             keyboardType="number-pad"
             maxLength={18}
             selectionColor={Colors.primary}
+            testID="amount-input"
           />
         </View>
         {/* Right side - currency symbol */}
