@@ -29,6 +29,7 @@ interface AddCategorySheetProps {
     color: string;
     icon: string;
   }) => void;
+  validateName?: (name: string) => string | null;
   initialData?: {
     name: string;
     color: string;
@@ -71,6 +72,7 @@ const AddCategorySheet: React.FC<AddCategorySheetProps> = ({
   visible,
   onClose,
   onSave,
+  validateName,
   initialData,
   title = 'Thêm danh mục mới',
 }) => {
@@ -98,6 +100,13 @@ const AddCategorySheet: React.FC<AddCategorySheetProps> = ({
       setError('Tên danh mục không được quá 50 ký tự');
       return;
     }
+
+    const nameValidationError = validateName?.(name.trim());
+    if (nameValidationError) {
+      setError(nameValidationError);
+      return;
+    }
+
     setError('');
     onSave({
       name: name.trim(),
@@ -230,7 +239,6 @@ const AddCategorySheet: React.FC<AddCategorySheetProps> = ({
           <TouchableOpacity
             style={[styles.saveButton, !name.trim() && styles.saveButtonDisabled]}
             onPress={handleSave}
-            disabled={!name.trim()}
           >
             <Text style={styles.saveButtonText}>Lưu danh mục</Text>
           </TouchableOpacity>

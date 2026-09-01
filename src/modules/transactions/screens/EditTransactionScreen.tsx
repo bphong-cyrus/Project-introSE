@@ -23,7 +23,7 @@ import TypeSelector from '../components/TypeSelector';
 import TransactionNameInput from '../components/TransactionNameInput';
 import AmountInput from '../components/AmountInput';
 import CategoryPicker from '../components/CategoryPicker';
-import DateTimeInput from '../components/DateTimeInput';
+import DateTimeInput, { DateTimeValidationState } from '../components/DateTimeInput';
 import NoteInput from '../components/NoteInput';
 
 interface EditTransactionScreenProps {
@@ -53,9 +53,14 @@ const EditTransactionScreen: React.FC<EditTransactionScreenProps> = ({
     transaction.category || null
   );
   const [dateTime, setDateTime] = useState<Date>(new Date(transaction.date));
+  const [dateTimeValidation, setDateTimeValidation] = useState<DateTimeValidationState>({
+    isDateValid: true,
+    isTimeValid: true,
+  });
   const [note, setNote] = useState<string>(transaction.note || '');
   const [transactionNameError, setTransactionNameError] = useState<string>('');
   const [amountError, setAmountError] = useState<string>('');
+  const [categoryError, setCategoryError] = useState<string>('');
 
   // Success state
   const [showSuccess, setShowSuccess] = useState(false);
@@ -111,6 +116,7 @@ const EditTransactionScreen: React.FC<EditTransactionScreenProps> = ({
     // Reset error
     setTransactionNameError('');
     setAmountError('');
+    setCategoryError('');
 
     // Parse amount - remove non-digits
     const numericAmount = parseInt(amount.replace(/[^0-9]/g, ''), 10);
@@ -135,6 +141,17 @@ const EditTransactionScreen: React.FC<EditTransactionScreenProps> = ({
 
     // Validation: Category must be selected
     if (!selectedCategory) {
+      setCategoryError('Vui lòng chọn danh mục');
+      return;
+    }
+
+    if (!dateTimeValidation.isDateValid || !dateTimeValidation.isTimeValid) {
+      Alert.alert(
+        'Ngày/giờ chưa hợp lệ',
+        dateTimeValidation.dateError ||
+          dateTimeValidation.timeError ||
+          'Vui lòng kiểm tra ngày và giờ giao dịch.'
+      );
       return;
     }
 
@@ -168,7 +185,7 @@ const EditTransactionScreen: React.FC<EditTransactionScreenProps> = ({
       setIsSaving(false);
       Alert.alert('Không thể cập nhật giao dịch', error?.message || 'Vui lòng thử lại sau.');
     }
-  }, [amount, selectedCategory, transactionName, transactionType, dateTime, note, transaction.id, updateTransaction, onSaved]);
+  }, [amount, selectedCategory, transactionName, transactionType, dateTime, dateTimeValidation, note, transaction.id, updateTransaction, onSaved]);
 
   // Handle type change
   const handleTypeChange = useCallback((type: 'income' | 'expense') => {
@@ -194,6 +211,7 @@ const EditTransactionScreen: React.FC<EditTransactionScreenProps> = ({
   // Handle category select
   const handleCategorySelect = useCallback((category: Category) => {
     setSelectedCategory(category);
+    setCategoryError('');
   }, []);
 
   // Show success overlay
@@ -261,12 +279,14 @@ const EditTransactionScreen: React.FC<EditTransactionScreenProps> = ({
             categories={availableCategories}
             selectedCategory={selectedCategory}
             onCategorySelect={handleCategorySelect}
+            error={categoryError}
           />
 
           {/* Date & Time Picker */}
           <DateTimeInput
             date={dateTime}
             onDateChange={setDateTime}
+            onValidationChange={setDateTimeValidation}
           />
 
           {/* Note Input */}

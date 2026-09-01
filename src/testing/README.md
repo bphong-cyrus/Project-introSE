@@ -1,57 +1,59 @@
-# Automated Testing Guide (Playwright)
+# SmartSpend AI - Comprehensive Testing Guide
 
-This folder contains end-to-end (E2E) automated test scripts for SmartSpend AI based on the test cases defined in `List_Use_Case_For_Auto.md`.
+This directory (`src/testing`) contains three testing layers covering the entire SmartSpend AI project:
+1. **`unit_testing/`**: Unit tests for utility functions, helpers, search/filter algorithms, and business logic.
+2. **`integrate_testing/`**: Integration tests for end-to-end component interactions, authentication flows, budget tracking, and financial report analytics.
+3. **`system_testing/`**: Playwright E2E browser automation tests for key user scenarios (Login, Manual Transaction).
+   - Test results, traces, and artifacts are stored in `system_testing/test_result/`.
+   - Playwright HTML reports are generated in `system_testing/playwright_report/`.
+
+---
 
 ## Prerequisites
 
 1. Ensure Node.js is installed.
-2. The project is an Expo app running on web (`npm run web`).
+2. Change directory into `src/testing` and install dependencies:
+   ```bash
+   cd src/testing
+   npm install
+   ```
 
 ---
 
-## Step 1: Install Playwright
+## 1. Running Unit Tests (`src/testing/unit_testing/`)
 
-Run the following commands in your terminal (at the project root or inside `src/`):
+To run unit tests with TypeScript and `ts-jest` configured correctly, execute:
 
 ```bash
-npm install -D @playwright/test
-npx playwright install
+npm run test:unit
 ```
 
 ---
 
-## Step 2: Start the Web App
+## 2. Running Integration Tests (`src/testing/integrate_testing/`)
 
-Before running the tests, make sure your Expo web app is running locally:
+To run integration tests across modules (Auth, Budgets, Reports, Transactions):
 
 ```bash
-npm run web
+npm run test:integrate
 ```
-*(By default, Expo Web runs on `http://localhost:8081`).*
 
 ---
 
-## Step 3: Run the Test Automation Scripts
+## 3. Running System Tests / E2E Automation (`src/testing/system_testing/`)
 
-Open a new terminal window and run:
+Playwright automated browser tests testing complete user workflows in real browsers.
 
-- **Run all automated tests:**
+- **Step A: Start the Web App** (in a separate terminal at the project root):
   ```bash
+  cd src
+  npx expo start -c
+  ```
+- **Step B: Run Playwright Tests**:
+  ```bash
+  cd src/testing
+  # Run test with Playwright UI
+  npx playwright test --ui 
+  # Run test without Playwright UI
   npx playwright test
-  ```
-
-- **Run tests in UI mode (interactive runner):**
-  ```bash
-  npx playwright test --ui
-  ```
-
-- **Run specific test file (e.g., Login tests):**
-  ```bash
-  npx playwright test login.spec.ts --ui
-  npx playwright test transaction.spec.ts --ui
-  ```
-
-- **Run with headed browser (see browser actions live):**
-  ```bash
-  npx playwright test --headed
   ```

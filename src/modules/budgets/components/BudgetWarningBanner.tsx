@@ -12,7 +12,7 @@ interface BudgetWarningBannerProps {
 }
 
 const BudgetWarningBanner: React.FC<BudgetWarningBannerProps> = ({ percentage }) => {
-  if (percentage <= 80) return null;
+  if (percentage < 80) return null;
 
   return (
     <View style={styles.container}>

@@ -20,6 +20,39 @@ const jsonResponse = (body: Record<string, unknown>, status = 200) =>
     },
   });
 
+const parseResendError = async (response: Response): Promise<string> => {
+  const rawBody = await response.text();
+  if (!rawBody) return '';
+
+  try {
+    const parsed = JSON.parse(rawBody) as { message?: string; error?: string; name?: string };
+    return parsed.message || parsed.error || parsed.name || rawBody;
+  } catch {
+    return rawBody;
+  }
+};
+
+const getResendErrorMessage = (status: number, detail: string): string => {
+  const normalizedDetail = detail.toLowerCase();
+
+  if (
+    status === 403 ||
+    normalizedDetail.includes('domain') ||
+    normalizedDetail.includes('verify') ||
+    normalizedDetail.includes('verified') ||
+    normalizedDetail.includes('resend.dev') ||
+    normalizedDetail.includes('testing emails')
+  ) {
+    return 'Cấu hình email gửi OTP chưa hợp lệ. Vui lòng kiểm tra RESEND_FROM_EMAIL/domain đã xác thực trong Supabase Edge Function.';
+  }
+
+  if (status === 429 || normalizedDetail.includes('rate limit')) {
+    return 'Dịch vụ gửi email đang bị giới hạn tần suất. Vui lòng thử lại sau.';
+  }
+
+  return 'Không thể gửi email. Vui lòng thử lại sau.';
+};
+
 // Cấu hình
 const OTP_EXPIRY_MINUTES = 5;
 const MAX_OTP_PER_15MIN = 3;
@@ -141,26 +174,35 @@ Deno.serve(async (req) => {
       },
     });
 
-    // Kiểm tra email có tồn tại trong hệ thống không
-    const { data: authUser, error: authError } = await supabaseAdmin.auth.admin
-      .listUsers();
+    // Kiểm tra email có tồn tại trong hệ thống không.
+    // listUsers is paginated, so scan pages instead of only checking the first page.
+    let userExists = false;
+    let page = 1;
+    const perPage = 1000;
 
-    if (authError) {
-      console.error('Error listing users:', authError);
-      return jsonResponse({ error: 'Không thể kiểm tra email. Vui lòng thử lại.' }, 500);
+    while (!userExists) {
+      const { data: authUsers, error: authError } = await supabaseAdmin.auth.admin
+        .listUsers({ page, perPage });
+
+      if (authError) {
+        console.error('Error listing users:', authError);
+        return jsonResponse({ error: 'Không thể kiểm tra email. Vui lòng thử lại.' }, 500);
+      }
+
+      const users = authUsers?.users ?? [];
+      userExists = users.some((u) => u.email?.toLowerCase() === normalizedEmail);
+
+      if (userExists || users.length < perPage) {
+        break;
+      }
+
+      page += 1;
     }
 
-    const userExists = authUser?.users?.some(
-      (u) => u.email?.toLowerCase() === normalizedEmail
-    );
-
     if (!userExists) {
-      // Trả về thành công để tránh leak thông tin user tồn tại
-      // Xem UC03 Alternative Flow 1
       return jsonResponse({
-        success: true,
-        message: 'Nếu email tồn tại trong hệ thống, mã OTP đã được gửi.',
-      });
+        error: 'Không tìm thấy tài khoản với email này.',
+      }, 404);
     }
 
     // Kiểm tra rate limit: không cho gửi quá MAX_OTP_PER_15MIN lần trong 15 phút
@@ -217,8 +259,11 @@ Deno.serve(async (req) => {
     });
 
     if (!resendResponse.ok) {
-      const errorDetail = await resendResponse.text();
-      console.error('Resend API error:', errorDetail);
+      const errorDetail = await parseResendError(resendResponse);
+      console.error('Resend API error:', {
+        status: resendResponse.status,
+        detail: errorDetail,
+      });
 
       // Xóa OTP nếu gửi email thất bại
       await supabaseAdmin
@@ -228,7 +273,8 @@ Deno.serve(async (req) => {
         .eq('code', otpCode);
 
       return jsonResponse({
-        error: 'Không thể gửi email. Vui lòng thử lại sau.',
+        error: getResendErrorMessage(resendResponse.status, errorDetail),
+        code: 'EMAIL_PROVIDER_ERROR',
       }, 502);
     }
 

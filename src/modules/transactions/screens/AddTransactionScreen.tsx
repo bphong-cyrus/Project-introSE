@@ -22,7 +22,7 @@ import TypeSelector from '../components/TypeSelector';
 import TransactionNameInput from '../components/TransactionNameInput';
 import AmountInput from '../components/AmountInput';
 import CategoryPicker from '../components/CategoryPicker';
-import DateTimeInput from '../components/DateTimeInput';
+import DateTimeInput, { DateTimeValidationState } from '../components/DateTimeInput';
 import NoteInput from '../components/NoteInput';
 import AIScanButton from '../components/AIScanButton';
 import SaveButton from '../components/SaveButton';
@@ -50,9 +50,14 @@ const AddTransactionScreen: React.FC<AddTransactionScreenProps> = ({
   const [amount, setAmount] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [dateTime, setDateTime] = useState<Date>(new Date());
+  const [dateTimeValidation, setDateTimeValidation] = useState<DateTimeValidationState>({
+    isDateValid: true,
+    isTimeValid: true,
+  });
   const [note, setNote] = useState<string>('');
   const [transactionNameError, setTransactionNameError] = useState<string>('');
   const [amountError, setAmountError] = useState<string>('');
+  const [categoryError, setCategoryError] = useState<string>('');
 
   // Success state - shows inline success message instead of Alert
   const [showSuccess, setShowSuccess] = useState(false);
@@ -84,6 +89,7 @@ const AddTransactionScreen: React.FC<AddTransactionScreenProps> = ({
     // Reset error
     setTransactionNameError('');
     setAmountError('');
+    setCategoryError('');
 
     // Parse amount - remove non-digits
     const numericAmount = parseInt(amount.replace(/[^0-9]/g, ''), 10);
@@ -117,7 +123,19 @@ const AddTransactionScreen: React.FC<AddTransactionScreenProps> = ({
     }
 
     if (!targetCategory) {
-      Alert.alert('Lỗi', 'Vui lòng chọn danh mục giao dịch.');
+      setCategoryError('Vui lòng chọn danh mục');
+      return;
+    }
+
+    const validCategory = targetCategory;
+
+    if (!dateTimeValidation.isDateValid || !dateTimeValidation.isTimeValid) {
+      Alert.alert(
+        'Ngày/giờ chưa hợp lệ',
+        dateTimeValidation.dateError ||
+          dateTimeValidation.timeError ||
+          'Vui lòng kiểm tra ngày và giờ giao dịch.'
+      );
       return;
     }
 
@@ -130,8 +148,8 @@ const AddTransactionScreen: React.FC<AddTransactionScreenProps> = ({
         name: trimmedTransactionName,
         amount: numericAmount,
         type: transactionType,
-        categoryId: targetCategory.id,
-        category: targetCategory,
+        categoryId: validCategory.id,
+        category: validCategory,
         date: dateTime,
         note: note.trim() || undefined,
       });
@@ -152,7 +170,7 @@ const AddTransactionScreen: React.FC<AddTransactionScreenProps> = ({
       setIsSaving(false);
       Alert.alert('Không thể lưu giao dịch', error?.message || 'Vui lòng thử lại sau.');
     }
-  }, [amount, selectedCategory, transactionName, transactionType, dateTime, note, addTransaction, onSaved, onClose]);
+  }, [amount, selectedCategory, transactionName, transactionType, dateTime, dateTimeValidation, note, addTransaction, onSaved, onClose, user, getCategoriesByType]);
 
   // Handle AI scan - navigate to AI Scanner Screen
   const handleScanReceipt = useCallback(() => {
@@ -180,6 +198,7 @@ const AddTransactionScreen: React.FC<AddTransactionScreenProps> = ({
   // Handle category change
   const handleCategorySelect = useCallback((category: Category) => {
     setSelectedCategory(category);
+    setCategoryError('');
   }, []);
 
   // Handle type change
@@ -251,12 +270,14 @@ const AddTransactionScreen: React.FC<AddTransactionScreenProps> = ({
           categories={availableCategories}
           selectedCategory={selectedCategory}
           onCategorySelect={handleCategorySelect}
+          error={categoryError}
         />
 
         {/* Date & Time Picker */}
         <DateTimeInput
           date={dateTime}
           onDateChange={setDateTime}
+          onValidationChange={setDateTimeValidation}
         />
 
         {/* Note Input */}
