@@ -15,6 +15,7 @@ import {
 import { Colors } from '../../../shared/constants/colors';
 import { Category } from '../../../shared/types';
 import { useTransactions } from '../../../state/TransactionContext';
+import { useAuth } from '../../../state/AuthContext';
 import { MAX_TRANSACTION_AMOUNT } from '../utils';
 import { useCategories } from '../../../state/CategoryContext';
 import TypeSelector from '../components/TypeSelector';
@@ -41,6 +42,7 @@ const AddTransactionScreen: React.FC<AddTransactionScreenProps> = ({
 }) => {
   const { addTransaction } = useTransactions();
   const { getCategoriesByType } = useCategories();
+  const { user } = useAuth();
 
   // Form state
   const [transactionType, setTransactionType] = useState<'income' | 'expense'>(initialType);
@@ -105,7 +107,17 @@ const AddTransactionScreen: React.FC<AddTransactionScreenProps> = ({
     }
 
     // Validation: Category must be selected
-    if (!selectedCategory) {
+    let targetCategory = selectedCategory;
+    if (!targetCategory || targetCategory.type !== transactionType) {
+      const categories = getCategoriesByType(transactionType);
+      if (categories.length > 0) {
+        targetCategory = categories[0];
+        setSelectedCategory(targetCategory);
+      }
+    }
+
+    if (!targetCategory) {
+      Alert.alert('Lỗi', 'Vui lòng chọn danh mục giao dịch.');
       return;
     }
 
@@ -114,12 +126,12 @@ const AddTransactionScreen: React.FC<AddTransactionScreenProps> = ({
       setIsSaving(true);
 
       await addTransaction({
-        userId: 'user-1',
+        userId: user?.id || 'user-1',
         name: trimmedTransactionName,
         amount: numericAmount,
         type: transactionType,
-        categoryId: selectedCategory.id,
-        category: selectedCategory,
+        categoryId: targetCategory.id,
+        category: targetCategory,
         date: dateTime,
         note: note.trim() || undefined,
       });

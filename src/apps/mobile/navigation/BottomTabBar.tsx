@@ -82,6 +82,7 @@ const BottomTabBar: React.FC<BottomTabBarProps> = ({
             style={[styles.addButtonWrapper, isActive('Add') && styles.addButtonWrapperActive]}
             onPress={onAddPress || (() => onTabPress?.('Add'))}
             activeOpacity={0.85}
+            testID="add-tab-button"
           >
             <View style={styles.addButtonFloating}>
               <Ionicons name="add" size={28} color="#FFFFFF" />

@@ -26,6 +26,7 @@ const SaveButton: React.FC<SaveButtonProps> = ({
       onPress={onPress}
       activeOpacity={0.8}
       disabled={disabled}
+      testID="save-button"
     >
       <Text style={styles.saveButtonText}>{label}</Text>
     </TouchableOpacity>

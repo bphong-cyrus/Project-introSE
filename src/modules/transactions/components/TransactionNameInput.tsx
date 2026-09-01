@@ -39,6 +39,7 @@ const TransactionNameInput: React.FC<TransactionNameInputProps> = ({
         placeholderTextColor={Colors.textMuted}
         maxLength={maxLength}
         returnKeyType="next"
+        testID="transaction-name-input"
       />
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
     </View>
