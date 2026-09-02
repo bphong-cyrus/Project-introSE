@@ -22,14 +22,14 @@ interface FilterChipsProps {
 }
 
 const FILTERS: { key: QuickFilter; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'income', label: 'Income' },
-  { key: 'expense', label: 'Expense' },
-  { key: 'food', label: 'Food & Drinks' },
-  { key: 'transport', label: 'Transportation' },
-  { key: 'shopping', label: 'Shopping' },
-  { key: 'education', label: 'Education' },
-  { key: 'other', label: 'Other' },
+  { key: 'all', label: 'Tất cả' },
+  { key: 'income', label: 'Thu nhập' },
+  { key: 'expense', label: 'Chi tiêu' },
+  { key: 'food', label: 'Ăn uống' },
+  { key: 'transport', label: 'Di chuyển' },
+  { key: 'shopping', label: 'Mua sắm' },
+  { key: 'education', label: 'Học tập' },
+  { key: 'other', label: 'Khác' },
 ];
 
 const FilterChips: React.FC<FilterChipsProps> = ({ activeFilter, onFilterChange }) => {
