@@ -53,7 +53,7 @@ Playwright automated browser tests testing complete user workflows in real brows
   ```bash
   cd src/testing
   # Run test with Playwright UI
-  npx playwright test --ui 
+  npx playwright test --ui
   # Run test without Playwright UI
   npx playwright test
   ```

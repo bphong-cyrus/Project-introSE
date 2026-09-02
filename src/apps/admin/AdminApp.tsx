@@ -2482,10 +2482,6 @@ export default function AdminApp() {
       <View style={styles.topBar}>
         <View style={styles.topLeft}>
           <Text style={styles.appTitle}>SmartSpend AI Admin</Text>
-          <View style={styles.searchBox}>
-            <Ionicons name="search" size={16} color={ADMIN_COLORS.muted} />
-            <Text style={styles.searchPlaceholder}>Tìm người dùng / lượt quét / góp ý...</Text>
-          </View>
         </View>
 
         <View style={styles.topActions}>
@@ -2523,9 +2519,6 @@ export default function AdminApp() {
           <SidebarItem icon="megaphone-outline" label="Thông báo" active={activeSection === 'notifications'} onPress={() => navigateAdminSection('notifications')} />
           <SidebarItem icon="scan-outline" label="Nhật ký AI" active={activeSection === 'ai_logs'} onPress={() => navigateAdminSection('ai_logs')} />
           <SidebarItem icon="chatbubble-ellipses-outline" label="Góp ý" active={activeSection === 'feedback'} onPress={() => navigateAdminSection('feedback')} />
-          <SidebarItem icon="document-text-outline" label="Kiểm toán" />
-          <SidebarItem icon="pulse-outline" label="Sức khỏe" />
-          <SidebarItem icon="settings-outline" label="Cài đặt" />
         </View>
 
         <ScrollView style={styles.main} contentContainerStyle={styles.mainContent}>
@@ -3530,28 +3523,11 @@ const styles = StyleSheet.create({
   topLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 24,
   },
   appTitle: {
     fontSize: 18,
     fontWeight: '900',
     color: ADMIN_COLORS.primary,
-  },
-  searchBox: {
-    width: 340,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: ADMIN_COLORS.background,
-    borderWidth: 1,
-    borderColor: ADMIN_COLORS.border,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    gap: 8,
-  },
-  searchPlaceholder: {
-    color: ADMIN_COLORS.muted,
-    fontSize: 13,
   },
   topActions: {
     flexDirection: 'row',
