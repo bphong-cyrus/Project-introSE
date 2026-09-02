@@ -164,6 +164,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
+                testID="email-input"
               />
             </View>
             {emailError ? (
@@ -197,6 +198,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({
                 }}
                 onBlur={() => validatePassword(password)}
                 secureTextEntry={!showPassword}
+                testID="password-input"
               />
               <TouchableOpacity
                 style={styles.eyeButton}
@@ -227,6 +229,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({
             style={[styles.loginButton, isLoading && styles.buttonDisabled]}
             onPress={handleLogin}
             disabled={isLoading}
+            testID="login-button"
           >
             {isLoading ? (
               <ActivityIndicator color="#FFFFFF" size="small" />

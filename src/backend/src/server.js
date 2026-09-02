@@ -58,8 +58,8 @@ app.use((req, res) => {
 // Centralised error handler (must be last)
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log(`[smartspend-backend] listening on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`[smartspend-backend] listening on http://localhost:${PORT} (0.0.0.0:${PORT})`);
   console.log(`  health   : GET  /health`);
   console.log(`  scanner  : POST /api/ai-scanner/analyze  (multipart/form-data)`);
   console.log(`  reports  : POST /api/reports/export  (Bearer Supabase access token)`);
