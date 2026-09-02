@@ -1,114 +1,164 @@
 # SmartSpend AI
 
-SmartSpend AI là hệ thống quản lý chi tiêu cá nhân, hỗ trợ nhập giao dịch thủ công, quét hóa đơn bằng AI, quản lý danh mục/ngân sách, cảnh báo vượt ngân sách và dashboard quản trị người dùng/thông báo.
+SmartSpend AI is a personal finance management application made of a mobile app, a web admin dashboard, an AI scanner backend, and Supabase backend services. The project supports account authentication, transactions, categories, budgets, budget warnings, Gemini-powered receipt scanning, financial reports, and admin workflows for users, notifications, AI scan logs, and feedback.
 
-## Nhóm thực hiện
+Repository: <https://github.com/bphong-cyrus/Project-introSE>
 
-| Tên | MSSV | Vai trò |
+## Team
+
+| Name | Student ID | Role |
 | --- | --- | --- |
-| Tạ Bỉnh Phong | | PM |
-| Nguyễn Trịnh Tuấn Văn | | Developer |
-| Nguyễn Trần Lan Viên | | Proposal & Design |
-| Phan Văn Bá Đạt | | Tester & Data |
+| Ta Binh Phong | | PM |
+| Nguyen Trinh Tuan Van | | Developer |
+| Nguyen Tran Lan Vien | | Proposal & Design |
+| Phan Van Ba Dat | | Tester & Data |
 
-## Công cụ và bối cảnh
+## Technology stack
 
-- Môn học: Introduction to Software Engineering - 24C07
-- Jira: <https://binhphongta993.atlassian.net/jira/software/projects/SCRUM/boards/1>
-- Mobile/Web app: Expo + React Native
-- Backend AI scanner: Node.js + Express
-- Database/Auth/Realtimes: Supabase
-- AI OCR provider: Google AI Studio Gemini
+| Area | Technology currently used in source |
+| --- | --- |
+| Mobile/Web app | Expo SDK 54, React Native 0.81.5, React 19.1 |
+| Web admin | Expo web route `/admin`, React Native Web |
+| Navigation/UI | React Navigation, Ionicons, React Native SVG |
+| Auth/Database/Realtime/Storage | Supabase JS v2 |
+| Local mobile auth storage | `@react-native-async-storage/async-storage` |
+| Android OAuth browser session | `expo-web-browser`, custom scheme `smartspendai` |
+| AI scanner backend | Node.js, Express, Multer |
+| AI provider | Google AI Studio Gemini vision models |
+| Report export backend | ExcelJS, PNG chart renderer |
+| File sharing | `expo-file-system`, `expo-sharing` |
 
-## Tính năng chính
+## Features currently implemented
 
-- Đăng ký, đăng nhập, cập nhật hồ sơ người dùng.
-- Quản lý giao dịch thu/chi.
-- Quản lý danh mục mặc định và danh mục tự tạo.
-- Quản lý ngân sách theo tháng và theo danh mục.
-- Cảnh báo ngân sách 80%/100% bằng notification trong app.
-- Quét hóa đơn bằng AI, trích xuất số tiền, cửa hàng, ngày, danh mục gợi ý.
-- Notification center cho người dùng.
-- Admin dashboard:
-  - xem metrics/người dùng,
-  - cập nhật trạng thái tài khoản,
-  - tạo/gửi/lên lịch/xóa thông báo,
-  - xem notification đã gửi.
+### Account & Authentication
 
-## Kiến trúc tổng quan
+- Sign up with email and password.
+- Sign in and sign out with Supabase Auth.
+- Sign in with Google OAuth.
+- Forgot password flow via email OTP.
+- Change password while signed in.
+- Profile setup and profile update.
+- Block inactive accounts through `user_profiles.account_status`.
 
-### Run it
+### Transactions
 
-1. **Lấy Gemini API key miễn phí** tại <https://aistudio.google.com/apikey>
-   (không cần thẻ tín dụng, quota miễn phí 15 RPM / 1500 RPD, bao gồm cả vision).
+- Add, edit, and delete manual income/expense transactions.
+- View transaction history.
+- Filter transactions by date, category, type, and amount range.
+- View transaction details.
+- Validate date/time, amount, transaction name, and category before saving.
 
-2. **Backend** (Express.js business layer — nằm trong `src/` theo
-   folder spec):
-   ```bash
-   cd src/backend
-   cp .env.example .env                  # paste GEMINI_API_KEYS (4 keys, comma-separated)
-   npm install
-   npm start                              # listens on http://localhost:4000
-   ```
+### Categories
 
-3. **Mobile app** (Expo presentation tier):
-   ```bash
-   cd src
-   npx expo start -c                      # `-c` clears the Metro cache
-   ```
+- Manage income and expense categories.
+- Support default categories and user-created categories.
+- Add categories with icon and color.
+- Validate blank, too-long, or duplicate category names.
 
-   Optional `src/.env` (tạo cạnh `src/package.json`):
-   ```
-   EXPO_PUBLIC_API_BASE_URL=http://<your-LAN-ip>:4000   # cho thiết bị thật
-   ```
-   Mặc định `http://10.0.2.2:4000` đã chạy được từ Android emulator.
+### Budgets & Notifications
 
-4. **Smoke test API** không cần mở app:
-   ```bash
-   curl http://localhost:4000/health
-   curl http://localhost:4000/api/ai-scanner/health
-   curl -F "image=@some-receipt.jpg" http://localhost:4000/api/ai-scanner/analyze
-   ```
+- Manage monthly budgets.
+- Set expected monthly income and category-level expense limits.
+- Display budget progress with radial gauge/progress UI.
+- Warn when budget usage reaches 80% and when it reaches/exceeds 100%.
+- In-app notification center.
+- Soft-delete notifications through `deleted_at`.
 
-### Repo layout (relevant slice)
+### AI Receipt Scanner
 
-```
+- Pick receipt images from camera or photo library.
+- Send images to the Express backend as `multipart/form-data`.
+- Backend calls a Gemini vision model to extract receipt data.
+- The scanner returns amount, store name, date, suggested category, transaction type, and confidence values.
+- Users review, edit, and save the extracted data as a transaction.
+- Scan logs are written for the Admin AI Logs page.
+
+### Reports
+
+- Financial reports screen in the mobile app.
+- Analyze income, expenses, budgets, savings rate, weekly allocation, and category breakdowns.
+- Export CSV directly from the client.
+- Export Excel through the backend, with multiple sheets and PNG charts embedded in the workbook.
+- Download/share reports on web or mobile devices.
+
+### Admin Dashboard
+
+The admin dashboard runs on the web route `/admin` and currently includes these pages:
+
+- Overview (`/admin`)
+- Users (`/admin/users`)
+- Notifications (`/admin/notifications`)
+- AI Logs (`/admin/ai-logs`)
+- Feedback (`/admin/feedback`)
+
+The admin dashboard supports:
+
+- Admin sign-in with email/password or Google OAuth.
+- Admin authorization through `user_profiles.is_admin` and `account_status = active`.
+- Metrics, charts, and system warning cards.
+- User account status management.
+- Create, send, schedule, edit, cancel, and delete notification campaigns.
+- View delivered notifications.
+- View and relabel/review AI scan logs.
+- Manage feedback status and responses.
+
+## Repository structure
+
+```text
 Project-introSE/
 ├── README.md
-├── docs/                         Tài liệu môn học, requirement, design, test
-├── pa/                           Bài nộp theo giai đoạn
+├── .gitignore
+├── docs/                         # Placeholder folders for course documents
+├── pa/                           # Submitted documents by phase
+│   ├── pa0/
+│   ├── pa1/
+│   ├── pa2/
+│   ├── pa3/
+│   └── pa4/
+├── supabase/
+│   └── functions/                # Supabase Edge Functions
+│       ├── send-password-reset-otp/
+│       ├── verify-password-reset-otp/
+│       ├── reset-password-with-token/
+│       └── forward-feedback-dev/
 └── src/
-    ├── App.tsx                   Entry, tự chọn MobileApp hoặc AdminApp theo route web
-    ├── app.json                  Expo config
-    ├── package.json              Scripts/dependencies cho Expo app
+    ├── App.tsx                   # Selects MobileApp or AdminApp based on web route
+    ├── app.json                  # Expo config
+    ├── package.json              # Expo app scripts/dependencies
+    ├── .env.example              # Mobile/web env template
     ├── apps/
-    │   ├── mobile/               Mobile app screens
-    │   └── admin/                Admin web dashboard
+    │   ├── mobile/               # Mobile app shell, screens, navigation
+    │   └── admin/                # Admin web dashboard
     ├── modules/
-    │   ├── ai-scanner/           Quét hóa đơn AI
-    │   ├── budgets/              Ngân sách/cảnh báo
-    │   ├── categories/           Danh mục
-    │   └── transactions/         Giao dịch
-    ├── state/                    React contexts
-    ├── shared/                   Types/constants/utils
+    │   ├── ai-scanner/           # AI receipt scanner UI/services
+    │   ├── budgets/              # Budgets and budget warnings
+    │   ├── categories/           # Categories
+    │   ├── reports/              # Financial reports
+    │   └── transactions/         # Transactions
+    ├── state/                    # Auth/Category/Transaction/Notification contexts
+    ├── shared/                   # Types, constants, utilities
     ├── data/
-    │   ├── repositories/         Repository layer
-    │   └── datasources/supabase/ SQL + Supabase client
-    └── backend/                  Express backend cho AI scanner
+    │   ├── datasources/supabase/ # Supabase client + TypeScript schema types
+    │   └── repositories/         # Repository layer
+    └── backend/                  # Express backend for AI scanner/report export
 ```
 
-## Yêu cầu môi trường
+`src/android/` may appear after running `npx expo run:android`. It is the native Android project generated by Expo prebuild.
 
-| Thành phần | Khuyến nghị |
+## Environment requirements
+
+| Component | Recommendation |
 | --- | --- |
-| Node.js | 18.x trở lên |
-| npm | 9.x trở lên |
-| Git | bất kỳ bản mới |
-| Expo CLI | dùng qua `npx expo ...` |
-| Supabase project | đã bật Auth, Database, Realtime |
-| Gemini API key | lấy tại <https://aistudio.google.com/apikey> |
+| Node.js | 18.x or newer |
+| npm | 9.x or newer |
+| Git | Any recent version |
+| Expo CLI | Use through `npx expo ...` |
+| Supabase project | Auth, Database, Realtime, Storage, Edge Functions |
+| Gemini API key | Get one from <https://aistudio.google.com/apikey> |
+| Supabase CLI | Required to deploy Edge Functions |
+| Android Studio/JDK | Required only for Android development builds |
 
-Kiểm tra nhanh:
+Quick checks:
 
 ```powershell
 node --version
@@ -116,30 +166,40 @@ npm --version
 git --version
 ```
 
-## Cài đặt lần đầu
-
-Clone repository:
+If building an Android development build:
 
 ```powershell
-git clone <repo-url>
+java -version
+adb version
+echo $env:ANDROID_HOME
+```
+
+The Android project currently uses Expo SDK 54/RN 0.81, so JDK 17 is recommended for native Android builds.
+
+## First-time installation
+
+Clone the repository:
+
+```powershell
+git clone https://github.com/bphong-cyrus/Project-introSE.git
 cd Project-introSE
 ```
 
-Cài dependencies cho Expo app:
+Install Expo app dependencies:
 
 ```powershell
 cd src
 npm install
 ```
 
-Cài dependencies cho backend AI scanner:
+Install backend dependencies:
 
 ```powershell
 cd backend
 npm install
 ```
 
-Nếu đang ở root repo và muốn chạy đầy đủ từ đầu:
+If starting from the repository root and installing both parts:
 
 ```powershell
 cd src
@@ -148,258 +208,248 @@ cd backend
 npm install
 ```
 
-## Cấu hình môi trường
+## Configuration
 
 ### 1. Mobile/Web app env
 
-Tạo file:
+Create:
 
 ```text
 src/.env
 ```
 
-Có thể copy từ:
+You can copy from:
 
 ```text
 src/.env.example
 ```
 
-Nội dung thường dùng:
+Common value:
 
 ```env
 EXPO_PUBLIC_API_BASE_URL=http://10.0.2.2:4000
 ```
 
-Gợi ý URL backend:
+Suggested backend URLs:
 
-| Môi trường chạy app | Giá trị gợi ý |
+| App runtime | Suggested value |
 | --- | --- |
 | Android emulator | `http://10.0.2.2:4000` |
 | iOS simulator | `http://localhost:4000` |
 | Web browser | `http://localhost:4000` |
-| Thiết bị thật cùng Wi-Fi | `http://<LAN-IP-của-máy-tính>:4000` |
+| Physical device on the same Wi-Fi | `http://<your-computer-LAN-IP>:4000` |
 
-Sau khi đổi `.env`, restart Expo với cache clear:
+After changing `.env`, restart Expo with cache clearing:
 
 ```powershell
 npx expo start -c
 ```
 
-### 2. Backend AI scanner env
+Do not put Gemini API keys in `src/.env`. Gemini keys belong only in the backend.
 
-Tạo file:
+### 2. Backend env
+
+Create:
 
 ```text
 src/backend/.env
 ```
 
-Copy từ:
+You can copy from:
 
 ```text
 src/backend/.env.example
 ```
 
-Ví dụ:
+Example configuration supported by the current backend:
 
 ```env
-GEMINI_API_KEYS=PASTE-KEY-1,PASTE-KEY-2
+GEMINI_API_KEYS=PASTE-KEY-1,PASTE-KEY-2,PASTE-KEY-3,PASTE-KEY-4
 GEMINI_MODEL=gemini-3.5-flash-lite
 GEMINI_FALLBACK_MODEL=gemini-3.5-flash
 AI_LOW_CONFIDENCE_RETRY=true
 AI_LOW_CONFIDENCE_RETRY_THRESHOLD=80
 AI_RETRY_TOTAL_BUDGET_MS=8000
 GEMINI_KEY_COOLDOWN_MS=60000
+GEMINI_REQUEST_TIMEOUT_MS=15000
 PORT=4000
 ALLOWED_ORIGINS=http://localhost:8081,http://localhost:19006,http://10.0.2.2:8081
 MAX_UPLOAD_BYTES=4194304
-# Optional override for Report & Export Controller.
-# If omitted, backend reads the existing mobile config in
-# src/data/datasources/supabase/supabase.ts.
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=PASTE-SUPABASE-ANON-KEY
-```
-
-Có thể dùng một key legacy:
-
-```env
-GOOGLE_API_KEY=PASTE-KEY-1
-```
-
-`SUPABASE_URL` và `SUPABASE_ANON_KEY` được backend dùng cho Report & Export Controller. Nếu không khai báo trong `.env`, backend tự đọc config hiện có ở `src/data/datasources/supabase/supabase.ts`. Backend vẫn xác thực người dùng bằng Supabase access token gửi từ mobile, sau đó truy vấn qua RLS của chính user đó.
-
-Nếu live database có constraint riêng cho `report_exports.export_type`, có thể đặt:
-
-```env
 REPORT_EXPORT_TYPE=excel
 REPORT_EXPORT_STATUS=success
 ```
 
-Backend mặc định dùng `export_type = excel`, `status = success` và có fallback cho một số giá trị phổ biến, nhưng tốt nhất là constraint DB cho phép hai giá trị này.
+How to get a Gemini API key:
 
-Không commit `.env` lên Git.
+1. Open <https://aistudio.google.com/apikey>.
+2. Sign in with a Google account.
+3. Click **Create API key**.
+4. Copy the key into `GEMINI_API_KEYS`, or use the legacy `GOOGLE_API_KEY` variable.
 
-### 3. Supabase config
+The backend supports:
 
-Supabase client hiện nằm tại:
+- `GEMINI_API_KEYS` as a comma-separated list.
+- `GOOGLE_API_KEY_1`, `GOOGLE_API_KEY_2`, ... if you prefer one key per variable.
+- `GOOGLE_API_KEY` if using a single key.
+
+`SUPABASE_URL` and `SUPABASE_ANON_KEY` are used by the Report & Export Controller. If they are omitted from `src/backend/.env`, the backend reads the same values from `src/data/datasources/supabase/supabase.ts`.
+
+Do not commit `.env` files.
+
+### 3. Supabase client config
+
+The Supabase client is located at:
 
 ```text
 src/data/datasources/supabase/supabase.ts
 ```
 
-File này chứa:
+It creates the client with:
 
 ```ts
-const SUPABASE_URL = '...';
-const SUPABASE_ANON_KEY = '...';
+createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    storage: Platform.OS === 'web' ? undefined : AsyncStorage,
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: Platform.OS === 'web',
+  },
+});
 ```
 
-Nếu dùng Supabase project khác, đổi URL và anon key tại đây. Anon key có thể xuất hiện ở frontend, nhưng RLS policies bắt buộc phải đúng để bảo vệ dữ liệu.
+If using another Supabase project, update `SUPABASE_URL` and `SUPABASE_ANON_KEY` in this file. The frontend uses only the anon key, not the service role key.
 
-## Cấu hình database Supabase
+### 4. Supabase schema used by the app
 
-Các SQL quan trọng nằm ở:
+In the current working tree, the schema used by the app is reflected by the `Database` type in:
 
 ```text
-src/data/datasources/supabase/
+src/data/datasources/supabase/supabase.ts
 ```
 
-### Bản SQL hợp nhất khuyến nghị
+Public tables referenced by the code:
 
-File mới đầy đủ cho nhóm notification, budget warning và các bảng liên quan:
+- `categories`
+- `transactions`
+- `budgets`
+- `budget_category_allocations`
+- `receipts`
+- `receipt_images`
+- `receipt_line_items`
+- `user_profiles`
+- `ocr_results`
+- `recommendation_runs`
+- `scan_logs`
+- `feedbacks`
+- `audit_logs`
+- `notifications`
+- `notification_campaigns`
+- `notification_campaign_targets`
+- `user_notification_settings`
+- `budget_warnings`
+- `push_tokens`
 
-```text
-src/data/datasources/supabase/notification_subsystem_full.sql
-```
-
-File này bao gồm:
-
-- tables/relations liên quan đến users, categories, transactions, budgets, allocations, notifications, campaigns, settings, push tokens, budget warnings, audit logs;
-- constraints/indexes;
-- seed default categories;
-- grants;
-- RLS policies;
-- RPC/functions cho admin notification, budget warning và transaction delete.
-
-Cách chạy:
-
-1. Tắt app/dev server hoặc đóng các tab app đang mở để tránh lock database.
-2. Vào Supabase Dashboard → SQL Editor.
-3. Chạy toàn bộ `notification_subsystem_full.sql`.
-4. Nếu gặp `lock_timeout`, đợi vài giây rồi chạy lại file.
-
-### Admin user management SQL
-
-Chạy thêm file này nếu cần Admin dashboard đọc `auth.users` và quản lý account:
-
-```text
-src/data/datasources/supabase/admin_user_management.sql
-```
-
-File này tạo/cập nhật:
+RPC/functions referenced by the code:
 
 - `get_admin_auth_users()`
 - `admin_update_user_profile(...)`
 - `admin_update_user_account_status(...)`
-- các policy/grant phục vụ admin dashboard.
+- `admin_create_notification_campaign(...)`
+- `admin_cancel_notification_campaign(...)`
+- `evaluate_user_budget_notifications()`
+- `ensure_user_monthly_budget(year, month)`
+- `refresh_user_budget_spending(year, month)`
+- `delete_user_transaction(transaction_id)`
 
-### AI Scan Logs SQL
+If setting up a new Supabase project, the database must provide the tables/RPC above with suitable RLS policies. In the current source tree, there is no SQL migration file for those tables besides the Edge Functions under `supabase/functions`.
 
-Chạy thêm file này để bật UC17 Nhật ký AI trên Admin Dashboard:
+### 5. Supabase Edge Functions
 
-```text
-src/data/datasources/supabase/ai_scan_logs_uc17.sql
+Current Edge Functions:
+
+| Function | Purpose |
+| --- | --- |
+| `send-password-reset-otp` | Sends a password reset OTP by email |
+| `verify-password-reset-otp` | Verifies the OTP and returns a verification token |
+| `reset-password-with-token` | Sets the new password using the verification token |
+| `forward-feedback-dev` | Forwards feedback to developers by email |
+
+Environment variables used by the Edge Function code:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `RESEND_API_KEY`
+- `RESEND_FROM_EMAIL`
+- `JWT_SECRET` or `SUPABASE_JWT_SECRET`
+
+Deploy Edge Functions with Supabase CLI from the repository root:
+
+```powershell
+supabase functions deploy send-password-reset-otp
+supabase functions deploy verify-password-reset-otp
+supabase functions deploy reset-password-with-token
+supabase functions deploy forward-feedback-dev
 ```
 
-File này bổ sung cột log còn thiếu cho `scan_logs`, bucket `receipt-images`,
-grants/RLS policies cho user/admin và các trường relabel/review.
+If the project is not linked with Supabase CLI yet, link it first using your Supabase CLI workflow.
 
-### Report Export SQL
+### 6. Google OAuth
 
-Trang Settings dùng Backend Report & Export Controller để tạo Excel report và ghi log vào bảng `report_exports`.
-Schema hiện tại cần có bảng:
+Mobile Google login uses:
 
-```text
-report_exports(report_export_id, user_id, export_type, period_start, period_end, file_url, status, created_at)
+- Expo scheme: `smartspendai`
+- Native redirect URL: `smartspendai://login-callback`
+- `expo-web-browser` to open the auth session on Android/iOS
+- `exchangeCodeForSession(...)` or `setSession(...)` to complete the Supabase session
+
+Required configuration:
+
+1. Configure the Google provider in Supabase Auth for your Supabase project.
+2. In the Google Cloud OAuth client, add the Supabase callback as an Authorized redirect URI:
+
+   ```text
+   https://<your-project>.supabase.co/auth/v1/callback
+   ```
+
+3. In Supabase Auth Redirect URLs, add:
+
+   ```text
+   smartspendai://login-callback
+   ```
+
+4. For web admin/mobile web, the redirect uses the current web origin.
+
+Current Expo config in `src/app.json`:
+
+```json
+{
+  "scheme": "smartspendai",
+  "android": { "package": "com.smartspendai.app" },
+  "ios": { "bundleIdentifier": "com.smartspendai.app" },
+  "newArchEnabled": false
+}
 ```
 
-Nếu dùng Supabase project mới, bảo đảm RLS owner policy cho bảng này tồn tại:
+## Running the system
 
-```sql
-alter table public.report_exports enable row level security;
-
-drop policy if exists report_exports_owner on public.report_exports;
-create policy report_exports_owner
-  on public.report_exports
-  for all
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
-```
-
-Nếu bảng chưa tồn tại, tạo tối thiểu:
-
-```sql
-create table if not exists public.report_exports (
-  report_export_id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  export_type varchar not null,
-  period_start date not null,
-  period_end date not null,
-  file_url text,
-  status varchar not null default 'completed',
-  created_at timestamptz not null default now()
-);
-```
-
-Nếu bảng đã có check constraint cũ không cho phép `excel`, cập nhật constraint:
-
-```sql
-alter table public.report_exports
-  drop constraint if exists report_exports_export_type_check;
-
-alter table public.report_exports
-  add constraint report_exports_export_type_check
-  check (export_type in ('excel', 'xlsx', 'report', 'monthly_report', 'transactions', 'csv', 'pdf'));
-
-alter table public.report_exports
-  drop constraint if exists report_exports_status_check;
-
-alter table public.report_exports
-  add constraint report_exports_status_check
-  check (status in ('success', 'completed', 'ready', 'done', 'generated', 'finished', 'pending', 'failed'));
-```
-
-### Các patch cũ
-
-Các file sau là patch nhỏ từng bước, giữ lại để debug hoặc migrate từng phần:
-
-```text
-budget_warning_fix_01_allocations.sql
-budget_warning_fix_02_budgets.sql
-budget_warning_fix_03_rpcs.sql
-budget_warning_fix_04_warning_type_constraint.sql
-notification_subsystem.sql
-```
-
-Với setup mới, ưu tiên dùng `notification_subsystem_full.sql`.
-
-## Chạy hệ thống
-
-### 1. Chạy backend AI scanner
+### 1. Run the AI scanner/report export backend
 
 Terminal 1:
 
 ```powershell
-cd D:\Code_lab\introSE\SmartSpendAI-Repo2\Project-introSE\src\backend
+cd src/backend
 npm start
 ```
 
-Hoặc dev mode:
+Or dev mode:
 
 ```powershell
 npm run dev
 ```
 
-Backend mặc định chạy tại:
+The backend defaults to:
 
 ```text
 http://localhost:4000
@@ -410,95 +460,352 @@ Health checks:
 ```powershell
 curl.exe -s http://localhost:4000/health
 curl.exe -s http://localhost:4000/api/ai-scanner/health
+curl.exe -s http://localhost:4000/api/reports/health
 ```
 
-Test phân tích hóa đơn:
-
-```powershell
-curl.exe -s -F "image=@D:\path\to\receipt.jpg" http://localhost:4000/api/ai-scanner/analyze
-```
-
-### 2. Chạy mobile app bằng Expo
+### 2. Run the Expo mobile app
 
 Terminal 2:
 
 ```powershell
-cd D:\Code_lab\introSE\SmartSpendAI-Repo2\Project-introSE\src
+cd src
 npx expo start -c
 ```
 
-Sau đó chọn:
+In the Expo CLI:
 
-- `a` để mở Android emulator,
-- `i` để mở iOS simulator nếu dùng macOS,
-- scan QR bằng Expo Go cho thiết bị thật,
-- hoặc mở web theo hướng dẫn bên dưới.
+- Press `a` to open the Android emulator if Android SDK is configured.
+- Scan the QR code with Expo Go when using a physical device on the same network.
+- Use `npm run web` if you want to run the web target.
 
-Scripts có sẵn:
+Scripts currently available in `src/package.json`:
 
 ```powershell
-npm start
-npm run android
-npm run ios
-npm run web
+npm start        # expo start
+npm run android  # expo run:android
+npm run ios      # expo run:ios
+npm run web      # expo start --web
 ```
 
-### 3. Chạy web/mobile web
+### 3. Run an Android development build
+
+Use this when testing native behavior such as custom scheme Google OAuth:
+
+```powershell
+cd src
+npx expo run:android
+```
+
+Requirements:
+
+- Android Studio/Android SDK installed.
+- `ANDROID_HOME` points to the Android SDK.
+- `platform-tools` is on PATH so `adb` is available.
+- JDK 17 is active in the terminal running the build.
+- An Android device with USB debugging enabled, or an emulator is running.
+
+If you change native config in `app.json` or add a native dependency, run the development build again.
+
+### 4. Run web/mobile web
 
 ```powershell
 cd src
 npm run web
 ```
 
-Trang web mặc định mở mobile app UI.
+Routes that do not start with `/admin` render the mobile app shell.
 
-### 4. Chạy Admin dashboard
+### 5. Run the Admin dashboard
 
-Admin dashboard dùng chung Expo web app. Route admin được chọn trong `src/App.tsx` khi URL bắt đầu bằng `/admin`.
+The Admin dashboard uses the same Expo web app. `src/App.tsx` selects `AdminApp` when the URL starts with `/admin`.
 
-Chạy web:
+Start web:
 
 ```powershell
 cd src
 npm run web
 ```
 
-Mở các route:
+Open:
 
 ```text
 http://localhost:8081/admin
 http://localhost:8081/admin/users
 http://localhost:8081/admin/notifications
 http://localhost:8081/admin/ai-logs
+http://localhost:8081/admin/feedback
 ```
 
-Điều kiện truy cập admin:
+Admin access requirements:
 
-- user phải có profile trong `user_profiles`;
-- `is_admin = true`;
-- `account_status = 'active'`;
-- đã chạy `admin_user_management.sql`.
+- The user is signed in with Supabase Auth.
+- The user has a record in `user_profiles`.
+- `user_profiles.is_admin = true`.
+- `user_profiles.account_status = active`.
+- RPC `get_admin_auth_users()` and the related admin RPCs exist in the database.
 
-## Luồng dữ liệu chính
+## AI Receipt Scanner (UC13)
 
-### Giao dịch và ngân sách
+This section follows the existing root README content, `src/modules/ai-scanner/README.md`, and `src/backend/README.md`.
+
+### Processing flow
+
+```text
+expo-image-picker (camera/gallery)
+      │ base64 + mediaType + uri
+      ▼
+AIScannerScreen.tsx
+      │ multipart/form-data POST
+      ▼
+Express backend
+src/backend/src/routes/aiScanner.routes.js
+      │ Gemini generateContent API call
+      ▼
+Gemini vision model
+      │ JSON structured response
+      ▼
+ExtractedReceiptData
+      │
+      ▼
+AIResultScreen.tsx (review, edit, save)
+```
+
+The Gemini client is not bundled into the mobile app. The Gemini API key is read only by the backend process from `src/backend/.env`.
+
+### Main files
+
+| File | Purpose |
+| --- | --- |
+| `src/modules/ai-scanner/screens/AIScannerScreen.tsx` | Pick/capture image, run analysis, write scan logs |
+| `src/modules/ai-scanner/screens/AIResultScreen.tsx` | Review, edit, and save transaction after scan |
+| `src/modules/ai-scanner/services/imageHelper.ts` | Image picker handling and adaptive compression |
+| `src/modules/ai-scanner/services/backendClient.ts` | HTTP client for the Express backend |
+| `src/modules/ai-scanner/services/receiptAnalyzer.ts` | Facade for receipt analysis flow |
+| `src/modules/ai-scanner/services/aiConfig.ts` | Backend URL and timeout config |
+| `src/backend/src/routes/aiScanner.routes.js` | Backend routes for AI scanner |
+| `src/backend/src/controllers/aiScanner.controller.js` | Request/response controller |
+| `src/backend/src/services/geminiClient.js` | Gemini API client |
+| `src/backend/src/services/geminiKeyPool.js` | Key rotation/failover |
+| `src/backend/src/services/receiptParser.js` | Prompt, JSON parsing, category/type/confidence mapping |
+| `src/backend/src/middleware/upload.js` | Multer upload handling and file size limit |
+
+### Adaptive image compression
+
+The client compresses images based on size to optimize OCR processing speed. If an image does not need resizing and JPEG re-encoding would increase the payload, the client keeps the original file.
+
+| Size category | Image dimensions | Compression quality | Purpose |
+| --- | --- | --- | --- |
+| Tiny | ≤ 400px | 90% | Preserve small-text detail |
+| Small | ≤ 800px | 80% | Balance detail and payload |
+| Large | ≤ 1600px | 72% | OCR-ready compression |
+| XLarge | > 1600px | 65%, resize to 1600px | Bound upload size and memory |
+
+### Performance tracking
+
+- Frontend shows the selected image file size.
+- Backend logs processing time per request and image size category.
+- `scan_logs.processing_time_ms` is used for analytics in Admin AI Logs.
+- The code tracks the SAD target of OCR + auto-categorization within 8 seconds.
+- Gemini requests are aborted after 15 seconds so the UI can recover.
+- The mobile scanner HTTP timeout is 20 seconds.
+
+When the Lite pass has `overallConfidence` below 80, the backend retries once with `gemini-3.5-flash` inside the same 8-second budget. If the fallback times out or fails, the backend keeps the first-pass result.
+
+### Backend AI scanner endpoints
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/api/ai-scanner/health` | Readiness/model/key pool check |
+| GET | `/api/ai-scanner/categories` | Static categories for the AI result dropdown |
+| POST | `/api/ai-scanner/analyze` | Upload a receipt image and receive extracted data |
+
+Test the backend without opening the app:
+
+```powershell
+curl.exe -s http://localhost:4000/health
+curl.exe -s http://localhost:4000/api/ai-scanner/health
+curl.exe -s -F "image=@D:\path\to\receipt.jpg" http://localhost:4000/api/ai-scanner/analyze
+```
+
+`POST /api/ai-scanner/analyze` uses `multipart/form-data` with the required field:
+
+```text
+image=<receipt image file>
+```
+
+Default upload limit from `.env`:
+
+```text
+MAX_UPLOAD_BYTES=4194304
+```
+
+### Scanner response data
+
+`analyzeReceipt()` returns `ExtractedReceiptData` for the mobile UI:
+
+| Field | Description |
+| --- | --- |
+| `amount` | Non-negative integer amount in VND |
+| `signedAmount` | Signed amount, negative for expense and positive for income |
+| `date` | Receipt date/time |
+| `storeName` | Store name/transaction source |
+| `categoryId` | Category id mapped to a local category |
+| `categoryName` | AI-suggested category name |
+| `note` | Short note extracted from the receipt |
+| `type` | `expense` or `income` |
+| `confidence` | 0-100 confidence for amount/storeName/date/category/type |
+| `overallConfidence` | Lowest confidence score among required fields |
+| `needsManualReview` | `true` when fields are missing or confidence is below threshold |
+| `missingFields` | Missing extracted fields |
+| `imageUri` | Local image picker URI, saved with the transaction when available |
+
+Successful backend response shape:
+
+```json
+{
+  "success": true,
+  "data": {
+    "amount": 118000,
+    "storeName": "Gong Cha",
+    "date": "2026-07-14T12:21:00.000Z",
+    "categoryId": "exp-cat-1",
+    "categoryName": "Ăn uống",
+    "note": "Trà Sữa Okinawa (L), Trà Xanh Gong Cha (L)",
+    "type": "expense",
+    "confidence": {
+      "amount": 98,
+      "storeName": 98,
+      "date": 95,
+      "category": 98,
+      "type": 99
+    }
+  }
+}
+```
+
+### Common AI scanner errors
+
+| Cause | UI feedback |
+| --- | --- |
+| Backend unreachable | Alert `Không thể phân tích hóa đơn` |
+| Backend returned non-2xx | Alert `Lỗi AI Scanner`, using the backend `error` message |
+| Network failure mid-upload | Alert `Không thể phân tích hóa đơn` |
+| File too large | Backend returns 413, UI displays the error |
+| Missing `image` field | Backend returns 400 |
+
+Successful and failed scans are written to `scan_logs` by the signed-in mobile client, including confidence, processing time, image URL, extracted fields, and error detail.
+
+## Backend API
+
+Backend entry point:
+
+```text
+src/backend/src/server.js
+```
+
+Current routes:
+
+| Method | Path | Auth | Description |
+| --- | --- | --- | --- |
+| GET | `/health` | No | Server alive check |
+| GET | `/api/ai-scanner/health` | No | AI scanner readiness |
+| GET | `/api/ai-scanner/categories` | No | Static scanner categories |
+| POST | `/api/ai-scanner/analyze` | No | Upload receipt image for analysis |
+| GET | `/api/reports/health` | No | Report export readiness |
+| POST | `/api/reports/export` | Supabase Bearer token | Create a monthly Excel report |
+| GET | `/api/reports/exports/:exportId/download` | Supabase Bearer token | Download a generated Excel report |
+
+### Report export API
+
+`POST /api/reports/export`
+
+Headers:
+
+```text
+Authorization: Bearer <Supabase access token>
+Content-Type: application/json
+```
+
+Body:
+
+```json
+{ "month": 8, "year": 2026 }
+```
+
+Successful response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "exportId": "uuid",
+    "fileName": "SmartSpendAI-user-2026-08.xlsx",
+    "downloadUrl": "/api/reports/exports/uuid/download",
+    "summary": {
+      "month": 8,
+      "year": 2026,
+      "transactionCount": 12,
+      "incomeTransactionCount": 2,
+      "totalIncome": 15000000,
+      "totalExpense": 4300000,
+      "totalBudget": 7000000,
+      "generatedAt": "2026-08-13T00:00:00.000Z"
+    }
+  }
+}
+```
+
+The Excel workbook is built in `src/backend/src/services/reportExportService.js` and includes these sheets:
+
+- `Tổng quan`
+- `Tổng hợp tài chính tháng`
+- `Phân bổ chi tuần`
+- `Tỷ trọng danh mục`
+- `So sánh nhiều tháng`
+- `Tuân thủ ngân sách`
+- `Giao dịch trong tháng`
+- `Thu nhập trong tháng`
+- `Toàn bộ transactions`
+- `Hạn mức ngân sách`
+- `Biểu đồ`
+
+Excel files are saved under:
+
+```text
+src/backend/generated-reports/
+```
+
+## Main data flows
+
+### Auth/Profile
+
+```text
+Supabase Auth user
+      │ user.id
+      ▼
+public.user_profiles.user_id
+```
+
+`user_profiles` stores profile information, admin permission, and account status. Email is stored on the Supabase Auth user, not in the current `user_profiles` type.
+
+### Transactions/Categories
 
 ```text
 transactions
   └─ category_id → categories
-
-budgets
-  └─ one monthly budget per user/year/month
-      └─ budget_category_allocations
-          └─ category_id → categories
 ```
 
-- Khi tạo monthly budget, hệ thống tạo allocation cho toàn bộ expense categories mặc định và tự tạo của user.
-- Allocation mới mặc định `allocated_amount = 0`.
-- Khi user sửa hạn mức, app cập nhật `allocated_amount`.
-- Khi user tạo/sửa/xóa giao dịch, app gọi RPC để refresh `spent_amount` và chạy warning.
+A transaction has `type = income | expense`, `amount`, `transaction_date`, `payment_method`, `source`, `note`, and transaction name.
 
-RPC liên quan:
+### Budgets
+
+```text
+budgets
+  └─ budget_category_allocations
+      └─ category_id → categories
+```
+
+Related RPC:
 
 ```text
 ensure_user_monthly_budget(year, month)
@@ -507,7 +814,7 @@ evaluate_user_budget_notifications()
 delete_user_transaction(transaction_id)
 ```
 
-### Notification
+### Notifications
 
 ```text
 notification_campaigns
@@ -518,63 +825,83 @@ budget_warnings
   └─ notifications(type = 'budget_warning')
 ```
 
-- User Notification Center đọc `notifications` theo `user_id`, `deleted_at is null`, `created_at <= now`.
-- Scheduled campaign được biểu diễn bằng notification có `created_at` ở tương lai.
-- Delete notification của user là soft delete qua `deleted_at`.
+The user Notification Center reads notifications by `user_id`, ignores records with `deleted_at`, and displays notifications whose `created_at` has arrived.
 
-## Kiểm tra và validation
+### AI scan logs
 
-Chạy TypeScript check:
+```text
+receipt image / backend result / error detail
+      ▼
+scan_logs
+      ▼
+Admin AI Logs page
+```
+
+Admins can view log details, confidence, extracted fields, matched transaction/receipt data, and relabel categories when needed.
+
+## Checks and validation
+
+TypeScript check for the Expo app:
 
 ```powershell
 cd src
-npx tsc --noEmit
+npm exec tsc -- --noEmit
 ```
 
-Kiểm tra Expo config:
+Expo dependency check:
+
+```powershell
+cd src
+npx expo install --check
+```
+
+Expo config check:
 
 ```powershell
 cd src
 npx expo config --type public
 ```
 
-Kiểm tra whitespace trong diff:
+Whitespace check in Git diff:
 
 ```powershell
-cd ..
 git diff --check
 ```
 
-Kiểm tra trạng thái Git:
-
-```powershell
-git status --short
-```
+The backend has no dedicated test script in `src/backend/package.json`; use the health endpoints after starting the server for a quick check.
 
 ## Troubleshooting
 
-| Lỗi | Nguyên nhân thường gặp | Cách xử lý |
+| Error | Common cause | Fix |
 | --- | --- | --- |
-| `Failed to fetch` khi quét hóa đơn | Backend chưa chạy hoặc URL sai | Kiểm tra `EXPO_PUBLIC_API_BASE_URL`, chạy `npm start` trong `src/backend` |
-| `EADDRINUSE: address already in use :::4000` | Port 4000 đang có process khác | Dừng process hoặc đổi `PORT` trong backend `.env` |
-| Gemini báo API key invalid | Key sai/hết hiệu lực | Tạo key mới tại Google AI Studio |
-| Supabase RPC 404 | Chưa chạy SQL tạo function | Chạy `notification_subsystem_full.sql` và/hoặc `admin_user_management.sql` |
-| Supabase RPC 400 | Function exception hoặc check constraint chưa đúng | Mở Network → Response để xem message, chạy lại SQL hợp nhất |
-| `deadlock detected` khi chạy SQL | App đang giữ lock realtime/query | Tắt app/dev server, chạy lại SQL sau vài giây |
-| Không thấy warning 80%/100% | Budget allocation chưa có hạn mức hoặc SQL chưa cập nhật | Đặt `allocated_amount > 0`, chạy lại RPC hoặc refresh app |
-| Không vào được admin | User chưa phải admin hoặc chưa active | Update `user_profiles.is_admin = true`, `account_status = 'active'` |
+| `Failed to fetch` when scanning a receipt | Backend is not running or backend URL is wrong | Start the backend and check `EXPO_PUBLIC_API_BASE_URL` |
+| `EADDRINUSE: address already in use :::4000` | Another process is using port 4000 | Stop that process or change `PORT` in `src/backend/.env` |
+| `GOOGLE_API_KEY chưa được cấu hình` or invalid API key | Missing/wrong Gemini key in backend env | Update `GEMINI_API_KEYS` or `GOOGLE_API_KEY` |
+| HTTP 413 when scanning | Image exceeds `MAX_UPLOAD_BYTES` | Compress/select a smaller image |
+| HTTP 400 when scanning | Request is missing field `image` | Send the multipart field `image` |
+| Report export cannot connect | Backend is not running or Supabase token is missing | Start the backend and sign in again |
+| Forgot password OTP cannot be sent | Edge Function/Resend env not deployed/configured | Deploy functions and check `RESEND_API_KEY`, `RESEND_FROM_EMAIL` |
+| Non-existing email still goes to OTP screen | Old Edge Function is still deployed | Deploy `send-password-reset-otp` again |
+| Google login on Android does not return to app | Supabase redirect URL is missing | Add `smartspendai://login-callback` |
+| Cannot access admin | User is not admin or account is inactive | Check `user_profiles.is_admin` and `account_status` |
+| Admin cannot load auth users | Admin RPC is missing in database | Create/grant RPC `get_admin_auth_users()` according to the schema used by the app |
+| `JAVA_HOME is not set` during Android build | Terminal cannot find JDK | Install JDK 17 and set `JAVA_HOME` |
+| `No Android connected device found` | No emulator/device is available | Start an emulator or enable USB debugging on a physical device |
 
-## Bảo mật
+## Security notes
 
-- Không commit `.env`, Gemini API key hoặc service role key.
-- Frontend chỉ dùng Supabase anon key.
-- Không đưa Supabase service role key vào mobile/web bundle.
-- RLS policies là lớp bảo vệ chính cho dữ liệu user.
-- Admin functions dùng `security definer`, vì vậy chỉ expose quyền qua `is_admin()`.
+- Do not commit `.env`, Gemini API keys, Resend API keys, or Supabase service role keys.
+- Mobile/web uses only the Supabase anon key.
+- Supabase service role key is used only in Edge Functions or trusted server environments.
+- Gemini API keys belong only in `src/backend/.env`, not in the mobile bundle.
+- Supabase RLS policies are the main user data protection layer.
+- Report export endpoints require a Supabase Bearer token.
+- The AI scanner endpoint processes image uploads in the backend and does not permanently store images in the backend process according to the existing backend README; scan logs/image URLs are written by the mobile client to Supabase when a user session exists.
 
-## Tài liệu liên quan
+## Project documents
 
+- Backend AI Scanner: [`src/backend/README.md`](src/backend/README.md)
 - AI Scanner module: [`src/modules/ai-scanner/README.md`](src/modules/ai-scanner/README.md)
-- AI Scanner backend: [`src/backend/README.md`](src/backend/README.md)
-- SQL hợp nhất: [`src/data/datasources/supabase/notification_subsystem_full.sql`](src/data/datasources/supabase/notification_subsystem_full.sql)
-- Admin SQL: [`src/data/datasources/supabase/admin_user_management.sql`](src/data/datasources/supabase/admin_user_management.sql)
+- PA4 overview text: [`pa/pa4/SmartSpend AI v1.0.txt`](pa/pa4/SmartSpend%20AI%20v1.0.txt)
+- PA4 documents: `pa/pa4/`
+- Earlier phase documents: `pa/pa0/`, `pa/pa1/`, `pa/pa2/`, `pa/pa3/`

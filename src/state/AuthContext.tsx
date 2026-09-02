@@ -4,6 +4,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { Platform } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import { supabase, Database } from '../data/datasources/supabase/supabase';
 import { User } from '../shared/types';
 
@@ -40,6 +41,26 @@ const SUPABASE_FUNCTIONS_URL = 'https://ndtkwtsmseibznarqvsw.supabase.co/functio
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kdGt3dHNtc2VpYnpuYXJxdnN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1NTE0MzEsImV4cCI6MjEwMDEyNzQzMX0.ETM2DZpUh1bIj_QsPR1NusQyFmEYgRtOqqqJxZlPQHw';
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+
+WebBrowser.maybeCompleteAuthSession();
+
+type EdgeFunctionResult = {
+  success?: boolean;
+  message?: string;
+  error?: string;
+};
+
+const parseEdgeFunctionResponse = async (response: Response): Promise<EdgeFunctionResult> => {
+  try {
+    return await response.json();
+  } catch {
+    return {};
+  }
+};
+
+const getEdgeFunctionErrorMessage = (result: EdgeFunctionResult, fallback: string): string => {
+  return result.error?.trim() || result.message?.trim() || fallback;
+};
 
 // Helper to convert Supabase user to our User type
 const mapSupabaseUser = (
@@ -129,11 +150,19 @@ const clearOAuthUrlParams = () => {
   window.history.replaceState({}, document.title, window.location.pathname);
 };
 
+const normalizeOAuthMessage = (message: string): string => {
+  try {
+    return decodeURIComponent(message.replace(/\+/g, ' '));
+  } catch {
+    return message;
+  }
+};
+
 const exchangeOAuthCodeIfPresent = async (): Promise<string | null> => {
   const oauthError = getOAuthUrlParam('error_description') || getOAuthUrlParam('error');
   if (oauthError) {
     clearOAuthUrlParams();
-    return decodeURIComponent(oauthError.replace(/\+/g, ' '));
+    return normalizeOAuthMessage(oauthError);
   }
 
   const code = getOAuthUrlParam('code');
@@ -146,6 +175,46 @@ const exchangeOAuthCodeIfPresent = async (): Promise<string | null> => {
   }
 
   return null;
+};
+
+const getOAuthCallbackParam = (url: string, key: string): string | null => {
+  const hashIndex = url.indexOf('#');
+  const queryIndex = url.indexOf('?');
+  const queryEndIndex = hashIndex >= 0 ? hashIndex : url.length;
+  const queryString = queryIndex >= 0 ? url.slice(queryIndex + 1, queryEndIndex) : '';
+  const hashString = hashIndex >= 0 ? url.slice(hashIndex + 1) : '';
+
+  const queryParams = new URLSearchParams(queryString);
+  const hashParams = new URLSearchParams(hashString);
+
+  return queryParams.get(key) || hashParams.get(key);
+};
+
+const completeNativeOAuthSignIn = async (callbackUrl: string): Promise<string | null> => {
+  const oauthError = getOAuthCallbackParam(callbackUrl, 'error_description') || getOAuthCallbackParam(callbackUrl, 'error');
+  if (oauthError) {
+    return normalizeOAuthMessage(oauthError);
+  }
+
+  const code = getOAuthCallbackParam(callbackUrl, 'code');
+  if (code) {
+    const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(callbackUrl);
+    return exchangeError?.message || null;
+  }
+
+  const accessToken = getOAuthCallbackParam(callbackUrl, 'access_token');
+  const refreshToken = getOAuthCallbackParam(callbackUrl, 'refresh_token');
+
+  if (accessToken && refreshToken) {
+    const { error: sessionError } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+
+    return sessionError?.message || null;
+  }
+
+  return 'Không nhận được mã xác thực từ Google. Vui lòng kiểm tra Redirect URL trong Supabase.';
 };
 
 // Helper to calculate age from date of birth
@@ -405,9 +474,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setError(null);
 
     try {
+      const normalizedEmail = email.trim().toLowerCase();
+
       // Validate email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
+      if (!emailRegex.test(normalizedEmail)) {
         setError('Định dạng email không hợp lệ.');
         return { success: false, message: 'Định dạng email không hợp lệ.' };
       }
@@ -420,19 +491,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           'apikey': SUPABASE_ANON_KEY,
           'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
         },
-        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+        body: JSON.stringify({ email: normalizedEmail }),
       });
 
-      const result = await response.json();
+      const result = await parseEdgeFunctionResponse(response);
 
-      if (!response.ok) {
-        setError(result.error || 'Không thể gửi mã OTP. Vui lòng thử lại.');
-        return { success: false, message: result.error || 'Không thể gửi mã OTP. Vui lòng thử lại.' };
+      if (!response.ok || result.success !== true) {
+        const message = getEdgeFunctionErrorMessage(result, 'Không thể gửi mã OTP. Vui lòng thử lại.');
+        setError(message);
+        return { success: false, message };
       }
 
       return {
         success: true,
-        message: 'Mã OTP đã được gửi đến email của bạn. Vui lòng kiểm tra hộp thư đến (hoặc spam).',
+        message: result.message || 'Mã OTP đã được gửi đến email của bạn. Vui lòng kiểm tra hộp thư đến (hoặc spam).',
       };
     } catch (err: any) {
       const message = err.message || 'Không thể gửi mã OTP. Vui lòng thử lại sau.';
@@ -536,14 +608,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           body: JSON.stringify({ email: email.trim().toLowerCase() }),
         });
 
-        const result = await response.json();
+        const result = await parseEdgeFunctionResponse(response);
 
-        if (!response.ok) {
-          setError(result.error || 'Không thể gửi lại mã OTP. Vui lòng thử lại.');
-          return { success: false, message: result.error || 'Không thể gửi lại mã OTP. Vui lòng thử lại.' };
+        if (!response.ok || result.success !== true) {
+          const message = getEdgeFunctionErrorMessage(result, 'Không thể gửi lại mã OTP. Vui lòng thử lại.');
+          setError(message);
+          return { success: false, message };
         }
 
-        return { success: true, message: 'Đã gửi lại mã OTP đến email của bạn.' };
+        return { success: true, message: result.message || 'Đã gửi lại mã OTP đến email của bạn.' };
       } else {
         // Sử dụng Supabase Auth cho signup
         const { error: resendError } = await supabase.auth.resend({
@@ -634,22 +707,49 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
-  // Google login (UI only - actual implementation requires OAuth setup)
+  // Google login
   const googleLogin = useCallback(async (): Promise<{ success: boolean; message: string }> => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const { error: googleError } = await supabase.auth.signInWithOAuth({
+      const redirectTo = getAuthRedirectUrl('/login-callback');
+
+      const { data, error: googleError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: getAuthRedirectUrl('/login-callback'),
+          redirectTo,
+          skipBrowserRedirect: Platform.OS !== 'web',
         },
       });
 
       if (googleError) {
         setError(googleError.message);
         return { success: false, message: googleError.message };
+      }
+
+      if (Platform.OS !== 'web') {
+        if (!data?.url) {
+          const message = 'Không tạo được liên kết đăng nhập Google.';
+          setError(message);
+          return { success: false, message };
+        }
+
+        const authResult = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+
+        if (authResult.type !== 'success') {
+          const message = 'Bạn đã hủy hoặc đóng cửa sổ đăng nhập Google.';
+          setError(message);
+          return { success: false, message };
+        }
+
+        const callbackError = await completeNativeOAuthSignIn(authResult.url);
+        if (callbackError) {
+          setError(callbackError);
+          return { success: false, message: callbackError };
+        }
+
+        return { success: true, message: 'Đăng nhập Google thành công' };
       }
 
       return { success: true, message: 'Đang chuyển hướng...' };

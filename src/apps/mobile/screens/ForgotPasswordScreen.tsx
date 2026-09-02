@@ -36,6 +36,7 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
 
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState('');
+  const [requestError, setRequestError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
   // Validate email
@@ -56,22 +57,25 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
   // Handle send reset email
   const handleSendReset = async () => {
     clearError();
+    setRequestError('');
     setSuccessMessage('');
 
     if (!validateEmail(email)) {
       return;
     }
 
-    const result = await forgotPassword(email);
+    const normalizedEmail = email.trim().toLowerCase();
+    const result = await forgotPassword(normalizedEmail);
     console.log('ForgotPassword result:', result);
 
     if (result.success) {
       setSuccessMessage(result.message);
       // Tự động chuyển sang trang OTP sau khi gửi thành công
       setTimeout(() => {
-        onNavigateToOTP(email);
+        onNavigateToOTP(normalizedEmail);
       }, 500);
     } else {
+      setRequestError(result.message);
       Alert.alert('Lỗi', result.message);
     }
   };
@@ -124,6 +128,8 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
                 value={email}
                 onChangeText={(text) => {
                   setEmail(text);
+                  setRequestError('');
+                  setSuccessMessage('');
                   if (emailError) validateEmail(text);
                 }}
                 onBlur={() => validateEmail(email)}
@@ -136,6 +142,14 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
               <Text style={styles.errorText}>{emailError}</Text>
             )}
           </View>
+
+          {/* Request Error */}
+          {requestError ? (
+            <View style={styles.errorCard}>
+              <Ionicons name="alert-circle" size={20} color={Colors.danger} />
+              <Text style={styles.errorCardText}>{requestError}</Text>
+            </View>
+          ) : null}
 
           {/* Success Message */}
           {successMessage ? (
@@ -264,6 +278,20 @@ const styles = StyleSheet.create({
     color: Colors.danger,
     marginTop: 6,
     marginLeft: 4,
+  },
+  errorCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.danger + '10',
+    borderRadius: 12,
+    padding: 16,
+    gap: 12,
+  },
+  errorCardText: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.danger,
+    lineHeight: 20,
   },
   successCard: {
     flexDirection: 'row',

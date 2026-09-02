@@ -244,14 +244,20 @@ const LoginScreen: React.FC<LoginScreenProps> = ({
 
           {/* Google Login Button */}
           <TouchableOpacity
-            style={styles.googleButton}
+            style={[styles.googleButton, isLoading && styles.buttonDisabled]}
             onPress={handleGoogleLogin}
             disabled={isLoading}
           >
-            <View style={styles.googleIconContainer}>
-              <Text style={styles.googleIcon}>G</Text>
-            </View>
-            <Text style={styles.googleButtonText}>Đăng nhập với Google</Text>
+            {isLoading ? (
+              <ActivityIndicator color={Colors.primary} size="small" />
+            ) : (
+              <>
+                <View style={styles.googleIconContainer}>
+                  <Text style={styles.googleIcon}>G</Text>
+                </View>
+                <Text style={styles.googleButtonText}>Đăng nhập với Google</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
 

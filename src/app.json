@@ -1,11 +1,12 @@
 {
   "expo": {
+    "scheme": "smartspendai",
     "name": "SmartSpend AI",
     "slug": "SmartSpendAI",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "sdkVersion": "54.0.0",
     "splash": {
       "image": "./img/smartspend-logo.png",
@@ -30,7 +31,8 @@
           "photosPermission": "SmartSpend AI cần quyền truy cập thư viện ảnh để bạn cập nhật avatar và chọn ảnh hóa đơn.",
           "cameraPermission": "SmartSpend AI cần quyền camera để quét hóa đơn."
         }
-      ]
+      ],
+      "expo-web-browser"
     ]
   }
 }

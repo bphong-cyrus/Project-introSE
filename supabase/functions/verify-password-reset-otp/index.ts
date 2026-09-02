@@ -25,9 +25,52 @@ const JWT_SECRET = Deno.env.get('JWT_SECRET') || Deno.env.get('SUPABASE_JWT_SECR
 const VERIFICATION_TOKEN_EXPIRY_MINUTES = 10;
 const MAX_VERIFY_ATTEMPTS = 5;
 
+type AuthUserSummary = {
+  id: string;
+  email?: string | null;
+};
+
+const findAuthUserByEmail = async (
+  supabaseAdmin: ReturnType<typeof createClient>,
+  normalizedEmail: string
+): Promise<{ user: AuthUserSummary | null; error: unknown }> => {
+  // Email is stored by Supabase Auth, not in public.user_profiles.
+  // user_profiles is keyed by user_id in the current schema.
+  let page = 1;
+  const perPage = 1000;
+
+  while (true) {
+    const { data: authUsers, error } = await supabaseAdmin.auth.admin
+      .listUsers({ page, perPage });
+
+    if (error) {
+      return { user: null, error };
+    }
+
+    const users = authUsers?.users ?? [];
+    const user = users.find((u) => u.email?.trim().toLowerCase() === normalizedEmail);
+
+    if (user) {
+      return {
+        user: {
+          id: user.id,
+          email: user.email,
+        },
+        error: null,
+      };
+    }
+
+    if (users.length < perPage) {
+      return { user: null, error: null };
+    }
+
+    page += 1;
+  }
+};
+
 // Tạo verification token (JWT đơn giản)
 const createVerificationToken = (
-  payload: { email: string; otp_id: string; purpose: string },
+  payload: { email: string; user_id: string; otp_id: string; purpose: string },
   secret: string
 ): string => {
   const header = { alg: 'HS256', typ: 'JWT' };
@@ -151,18 +194,14 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'Không thể cập nhật trạng thái OTP. Vui lòng thử lại.' }, 500);
     }
 
-    // Tìm user trong auth.users để lấy user_id
-    const { data: authUsers, error: listUsersError } = await supabaseAdmin.auth.admin
-      .listUsers();
+    // Tìm user trong auth.users để lấy user_id.
+    // Schema hiện tại: public.user_profiles không có cột email, chỉ có user_id.
+    const { user: targetUser, error: authLookupError } = await findAuthUserByEmail(supabaseAdmin, normalizedEmail);
 
-    if (listUsersError) {
-      console.error('Error listing users:', listUsersError);
+    if (authLookupError) {
+      console.error('Error looking up auth user by email:', authLookupError);
       return jsonResponse({ error: 'Không thể xác định tài khoản. Vui lòng thử lại.' }, 500);
     }
-
-    const targetUser = authUsers?.users?.find(
-      (u) => u.email?.toLowerCase() === normalizedEmail
-    );
 
     if (!targetUser) {
       return jsonResponse({

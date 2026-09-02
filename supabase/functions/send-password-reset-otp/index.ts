@@ -57,6 +57,49 @@ const getResendErrorMessage = (status: number, detail: string): string => {
 const OTP_EXPIRY_MINUTES = 5;
 const MAX_OTP_PER_15MIN = 3;
 
+type AuthUserSummary = {
+  id: string;
+  email?: string | null;
+};
+
+const findAuthUserByEmail = async (
+  supabaseAdmin: ReturnType<typeof createClient>,
+  normalizedEmail: string
+): Promise<{ user: AuthUserSummary | null; error: unknown }> => {
+  // Email is stored by Supabase Auth, not in public.user_profiles.
+  // user_profiles is keyed by user_id in the current schema.
+  let page = 1;
+  const perPage = 1000;
+
+  while (true) {
+    const { data: authUsers, error } = await supabaseAdmin.auth.admin
+      .listUsers({ page, perPage });
+
+    if (error) {
+      return { user: null, error };
+    }
+
+    const users = authUsers?.users ?? [];
+    const user = users.find((u) => u.email?.trim().toLowerCase() === normalizedEmail);
+
+    if (user) {
+      return {
+        user: {
+          id: user.id,
+          email: user.email,
+        },
+        error: null,
+      };
+    }
+
+    if (users.length < perPage) {
+      return { user: null, error: null };
+    }
+
+    page += 1;
+  }
+};
+
 // Generate mã OTP 6 số ngẫu nhiên
 const generateOTP = (): string => {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -174,32 +217,16 @@ Deno.serve(async (req) => {
       },
     });
 
-    // Kiểm tra email có tồn tại trong hệ thống không.
-    // listUsers is paginated, so scan pages instead of only checking the first page.
-    let userExists = false;
-    let page = 1;
-    const perPage = 1000;
+    // Kiểm tra email có tồn tại trong Supabase Auth không.
+    // Schema hiện tại: public.user_profiles không có cột email, chỉ có user_id.
+    const { user: existingUser, error: authLookupError } = await findAuthUserByEmail(supabaseAdmin, normalizedEmail);
 
-    while (!userExists) {
-      const { data: authUsers, error: authError } = await supabaseAdmin.auth.admin
-        .listUsers({ page, perPage });
-
-      if (authError) {
-        console.error('Error listing users:', authError);
-        return jsonResponse({ error: 'Không thể kiểm tra email. Vui lòng thử lại.' }, 500);
-      }
-
-      const users = authUsers?.users ?? [];
-      userExists = users.some((u) => u.email?.toLowerCase() === normalizedEmail);
-
-      if (userExists || users.length < perPage) {
-        break;
-      }
-
-      page += 1;
+    if (authLookupError) {
+      console.error('Error looking up auth user by email:', authLookupError);
+      return jsonResponse({ error: 'Không thể kiểm tra email. Vui lòng thử lại.' }, 500);
     }
 
-    if (!userExists) {
+    if (!existingUser) {
       return jsonResponse({
         error: 'Không tìm thấy tài khoản với email này.',
       }, 404);
